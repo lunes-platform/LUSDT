@@ -4,7 +4,7 @@ pub type Timestamp = u64;
 pub type Balance = u128;
 
 /// Configuration for fee distribution wallets.
-#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, ink::storage::traits::StorageLayout)]
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 pub struct DistributionWallets {
     /// Development team wallet (40% for mint, 40% for burn).
@@ -20,7 +20,7 @@ pub struct DistributionWallets {
 }
 
 /// Fee configuration with adaptive rates based on volume.
-#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, ink::storage::traits::StorageLayout)]
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 pub struct FeeConfig {
     /// Base fee in basis points (100 = 1%).

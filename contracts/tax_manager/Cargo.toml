@@ -14,6 +14,7 @@ common = { path = "../common", default-features = false }
 ink_e2e = { version = "5.1.1" }
 mock_flipper = { path = "../mock_flipper", default-features = false, features = ["ink-as-dependency"] }
 drink = { version = "0.1.0", features = ["session"] }
+mock_lunes_token = { path = "../mock_lunes_token", default-features = false, features = ["ink-as-dependency"] }
 
 [lib]
 path = "src/lib.rs"

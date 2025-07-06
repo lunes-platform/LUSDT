@@ -1,7 +1,7 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
 #[ink::contract]
-mod mock_lunes_token {
+pub mod mock_lunes_token {
     use common::traits::PSP22;
     use ink::storage::Mapping;
 
