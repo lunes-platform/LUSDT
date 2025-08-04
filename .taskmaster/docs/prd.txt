@@ -1,0 +1,117 @@
+# Product Requirements Document (PRD) - LUSDT Project
+
+## 1. Introduction
+
+This document outlines the requirements for the LUSDT project, a hybrid on-chain/off-chain stablecoin system pegged 1:1 to USDT. The system leverages smart contracts on the Lunes network (written in Ink!), a multisig treasury on the Solana network, and an off-chain bridge service to coordinate operations between the two chains.
+
+## 2. Core Components
+
+### 2.1. On-Chain Components (Lunes Network)
+
+#### 2.1.1. `lusdt_token` Contract (PSP22 Standard)
+This contract represents the LUSDT stablecoin on the Lunes network.
+
+**Storage Fields:**
+- `psp22_data`: Standard PSP22 storage (`total_supply`, `balances`, `allowances`).
+- `owner`: `AccountId` with admin privileges (must be a multisig wallet).
+- `bridge_account`: `AccountId` of the off-chain service, the only entity authorized to mint LUSDT.
+- `tax_manager_contract`: `AccountId` for the fee management contract.
+- `paused`: `bool` flag for the circuit breaker pattern.
+
+**Functions (Messages):**
+- `mint(to: AccountId, amount: Balance)`: Mints new LUSDT. Callable only by `bridge_account`. Must be pausable.
+- `burn(from: AccountId, amount: Balance, solana_recipient_address: String)`: Burns LUSDT from a user's balance. Callable by any token holder. Must be pausable and emit a `RedemptionRequested` event.
+- `transfer()`: Standard PSP22 transfer function.
+- `approve()`: Standard PSP22 approve function.
+- `transfer_from()`: Standard PSP22 transfer_from function.
+- `set_bridge_account(new_account: AccountId)`: Admin function to update the bridge account. Owner only.
+- `set_tax_manager_contract(new_address: AccountId)`: Admin function to update the tax manager address. Owner only.
+- `toggle_pause_state()`: Admin function to pause/unpause the contract. Owner only.
+
+**Events:**
+- `RedemptionRequested`: Emitted on a burn operation, containing details for the off-chain service.
+- Admin events for traceability (`BridgeAccountUpdated`, `TaxManagerUpdated`, `Paused`, `Unpaused`).
+- Standard `Transfer` and `Approval` events.
+
+#### 2.1.2. `tax_manager` Contract
+This contract handles the logic for applying and distributing fees for mint and burn operations.
+
+**Storage Fields:**
+- `owner`: `AccountId` with admin privileges (same as `lusdt_token`).
+- `lunes_token_address`: Address of the LUNES token contract.
+- `distribution_wallets`: A struct containing addresses for development, DAO, backing fund, and rewards.
+- `burn_address`: An irrecoverable address for burning a portion of fees.
+- `fee_config`: A struct defining fee percentages and adaptive fee tiers based on volume.
+- `monthly_volume_usd`: Tracks the 30-day transaction volume in USD.
+- `last_volume_reset_timestamp`: Timestamp of the last volume reset.
+
+**Functions (Messages):**
+- `process_fees(operation: enum, user: AccountId, fee_amount: Balance)`: Calculates and distributes fees based on the operation type (Mint/Burn).
+- `update_monthly_volume(new_tx_volume_usd: u128)`: Updates the rolling monthly volume. Restricted to an authorized keeper account (the bridge service).
+- `update_fee_config(new_config: FeeConfig)`: Admin function to update fee parameters and wallets. Owner only.
+- `get_current_fee_bps()`: A query to return the current fee percentage based on volume.
+
+### 2.2. On-Chain Component (Solana Network)
+
+- **Multisig Treasury:** A secure multisig vault (e.g., Squads Protocol) to hold the 1:1 USDT-SPL collateral.
+- **Security Policy:** Must require a minimum of 3-of-5 signatures for any transaction.
+- **Signatories:** Key team members using hardware wallets, geographically distributed.
+
+### 2.3. Off-Chain Component (Bridge Service)
+
+A robust and secure oracle service to monitor and relay events between the Lunes and Solana networks.
+
+**Modules:**
+- **Solana Deposit Monitor:**
+  - Listens for USDT-SPL deposits to the multisig treasury address via WebSockets.
+  - Validates transactions (asset, amount, memo with Lunes recipient AccountId).
+  - Waits for `finalized` confirmations.
+  - Triggers the `mint` function on the `lusdt_token` contract on Lunes.
+  - Must use an internal database to track transaction states and prevent replays.
+- **Lunes Redemption Processor:**
+  - Listens for `RedemptionRequested` events from the `lusdt_token` contract.
+  - Creates a transaction proposal on the Solana multisig vault.
+  - Notifies multisig administrators of the pending withdrawal.
+  - Monitors the proposal execution on Solana and updates its internal state.
+
+## 3. Business Rules
+
+- **RN01 (Parity):** The `total_supply` of LUSDT must never exceed the USDT balance in the Solana treasury.
+- **RN02 (Minting Fee):** Adaptive fee (e.g., 0.5%), paid in LUNES.
+  - Distribution: 40% Dev, 25% Backing Fund, 20% DAO, 15% Rewards.
+- **RN03 (Redemption Fee):** Adaptive fee (e.g., 0.5%), paid in LUNES.
+  - Distribution: 40% Dev, 20% Burn, 20% DAO, 20% User Bonus.
+- **RN04 (Adaptive Fees):** Fee percentages adjust based on 30-day volume:
+  - <= $10k: 0.6%
+  - > $10k to $100k: 0.5%
+  - > $100k: 0.3%
+
+## 4. Security Requirements
+
+- **Access Control:** All administrative functions must be restricted to the `owner`. The `mint` function must be restricted to the `bridge_account`.
+- **Arithmetic Safety:** All arithmetic operations must be protected against overflow/underflow using `checked_*` methods.
+- **Reentrancy:** Follow the Checks-Effects-Interactions pattern. Reentrancy must be disabled by default.
+- **Circuit Breaker:** The `lusdt_token` contract must be pausable by the owner in case of an emergency.
+- **Input Validation:** Rigorously validate all inputs, especially the `solana_recipient_address`.
+- **Auditing:** The contracts must undergo a full security audit.
+
+## 5. Testing Requirements (TDD)
+
+- **Unit Tests (`#[ink::test]`):** Cover all internal logic for both `lusdt_token` and `tax_manager`.
+  - Test all success paths.
+  - Test all failure paths (e.g., unauthorized access, insufficient balance, paused state).
+  - Test all edge cases (e.g., zero-value transfers, overflow conditions).
+- **Integration Tests (`#[ink_e2e::test]`):** Verify the interaction between `lusdt_token` and `tax_manager`.
+- **End-to-End Tests:** A separate test suite to validate the full mint/burn flow, including the bridge service (can be a mocked version for testing). This must cover:
+  - User deposits USDT on Solana -> LUSDT is minted on Lunes.
+  - User burns LUSDT on Lunes -> USDT is transferred on Solana.
+
+## 6. Production Readiness
+
+- **Infrastructure:**
+  - Securely set up the Bridge Service with an HSM/Vault for key management.
+  - Configure the Solana multisig with a 3-of-5 policy and hardware wallets.
+- **Monitoring:**
+  - Set up real-time monitoring and alerting for critical events (e.g., large transactions, parity deviation, contract paused).
+- **Incident Response:**
+  - A clear, documented incident response plan must be in place.
