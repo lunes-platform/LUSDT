@@ -1,0 +1,60 @@
+{
+  "name": "lusdt-frontend-monorepo",
+  "version": "1.0.0",
+  "description": "LUSDT Frontend Ecosystem - Monorepo for admin panel, user interface, and shared components",
+  "private": true,
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "pnpm run dev --recursive",
+    "dev:all": "node scripts/dev-all.js",
+    "build": "node scripts/build-packages.js",
+    "build:workspaces": "pnpm run build --recursive",
+    "test": "pnpm run test --recursive",
+    "lint": "pnpm run lint --recursive",
+    "clean": "pnpm run clean --recursive && rm -rf node_modules",
+    "install:all": "pnpm install",
+    "dev:admin": "pnpm run dev --filter=@lusdt/admin-panel",
+    "dev:user": "pnpm run dev --filter=@lusdt/user-interface",
+    "dev:components": "pnpm run dev --filter=@lusdt/shared-components",
+    "build:admin": "pnpm run build --filter=@lusdt/admin-panel",
+    "build:user": "pnpm run build --filter=@lusdt/user-interface",
+    "build:components": "pnpm run build --filter=@lusdt/shared-components",
+    "build:services": "pnpm run build --filter=@lusdt/blockchain-services",
+    "build:utils": "pnpm run build --filter=@lusdt/shared-utils",
+    "test:admin": "pnpm run test --filter=@lusdt/admin-panel",
+    "test:user": "pnpm run test --filter=@lusdt/user-interface",
+    "test:components": "pnpm run test --filter=@lusdt/shared-components",
+    "test:services": "pnpm run test --filter=@lusdt/blockchain-services",
+    "test:utils": "pnpm run test --filter=@lusdt/shared-utils"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "~5.8.3",
+    "concurrently": "^9.0.0",
+    "rimraf": "^6.0.0",
+    "@rollup/plugin-commonjs": "^28.0.1",
+    "@rollup/plugin-node-resolve": "^16.0.0",
+    "@rollup/plugin-typescript": "^12.1.1",
+    "rollup": "^4.28.1",
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "rollup-plugin-postcss": "^4.0.2"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
+  "keywords": [
+    "lusdt",
+    "frontend",
+    "monorepo",
+    "react",
+    "typescript",
+    "tailwind",
+    "blockchain"
+  ],
+  "author": "LUSDT Team",
+  "license": "MIT"
+}

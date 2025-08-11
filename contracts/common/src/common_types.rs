@@ -4,8 +4,7 @@ pub type Timestamp = u64;
 pub type Balance = u128;
 
 /// Configuration for fee distribution wallets.
-#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, ink::storage::traits::StorageLayout)]
-#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, scale_info::TypeInfo, ink::storage::traits::StorageLayout)]
 pub struct DistributionWallets {
     /// Development team wallet (40% for mint, 40% for burn).
     pub dev: AccountId,
@@ -20,8 +19,7 @@ pub struct DistributionWallets {
 }
 
 /// Fee configuration with adaptive rates based on volume.
-#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, ink::storage::traits::StorageLayout)]
-#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, scale_info::TypeInfo, ink::storage::traits::StorageLayout)]
 pub struct FeeConfig {
     /// Base fee in basis points (100 = 1%).
     pub base_fee_bps: u16,
@@ -38,8 +36,7 @@ pub struct FeeConfig {
 }
 
 /// Operation type for fee processing.
-#[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode, Clone, Copy)]
-#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+#[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode, Clone, Copy, scale_info::TypeInfo)]
 pub enum OperationType {
     Mint,
     Burn,

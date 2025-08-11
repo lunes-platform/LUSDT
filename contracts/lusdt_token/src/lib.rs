@@ -1,15 +1,17 @@
 //! # LUSDT Token Contract - Security Hardened
+//! # Contrato de Token LUSDT - Endurecimento de Segurança
 //! 
 //! A secure, audited implementation of a cross-chain bridge token for Lunes <-> Solana.
+//! Uma implementação segura e auditada de um token de ponte cross-chain para Lunes <-> Solana.
 //! 
-//! ## Security Features
-//! - Role-Based Access Control (RBAC) with BRIDGE_ROLE
-//! - Emergency Circuit Breaker (pause/unpause)
-//! - Safe arithmetic operations with overflow protection
-//! - Reentrancy protection via Checks-Effects-Interactions pattern
-//! - Comprehensive audit logging
+//! ## Security Features / Recursos de Segurança
+//! - Role-Based Access Control (RBAC) with BRIDGE_ROLE / Controle de Acesso Baseado em Papéis com BRIDGE_ROLE
+//! - Emergency Circuit Breaker (pause/unpause) / Disjuntor de Emergência (pausar/despausar)
+//! - Safe arithmetic operations with overflow protection / Operações aritméticas seguras com proteção contra overflow
+//! - Reentrancy protection via Checks-Effects-Interactions pattern / Proteção contra reentrância via padrão Checks-Effects-Interactions
+//! - Comprehensive audit logging / Log de auditoria abrangente
 //! 
-//! ## Architecture
+//! ## Architecture / Arquitetura
 //! ```text
 //! ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 //! │   Solana USDT   │───▶│  Bridge Service │───▶│   LUSDT Token   │
@@ -28,53 +30,53 @@ mod lusdt_token {
     #[cfg(not(test))]
     use common::{common_types::OperationType, traits::TaxManager};
 
-    /// @title LUSDT Token Storage
-    /// @notice Stores all contract state with security-first design
+    /// @title LUSDT Token Storage / Armazenamento do Token LUSDT
+    /// @notice Stores all contract state with security-first design / Armazena todo o estado do contrato com design security-first
     #[ink(storage)]
     pub struct LusdtToken {
-        /// Contract version
+        /// Contract version / Versão do contrato
         version: u16,
-        /// Total supply of LUSDT tokens
+        /// Total supply of LUSDT tokens / Fornecimento total de tokens LUSDT
         total_supply: Balance,
-        /// Mapping from AccountId to token balance
+        /// Mapping from AccountId to token balance / Mapeamento de AccountId para saldo de tokens
         balances: Mapping<AccountId, Balance>,
-        /// Mapping from AccountId to spender allowances
+        /// Mapping from AccountId to spender allowances / Mapeamento de AccountId para permissões de gastos
         allowances: Mapping<(AccountId, AccountId), Balance>,
         
-        // === SECURITY: Role-Based Access Control ===
-        /// Contract owner (should be multisig)
+        // === SECURITY: Role-Based Access Control / SEGURANÇA: Controle de Acesso Baseado em Papéis ===
+        /// Contract owner (should be multisig) / Proprietário do contrato (deve ser multisig)
         owner: AccountId,
-        /// Bridge service account with BRIDGE_ROLE
+        /// Bridge service account with BRIDGE_ROLE / Conta do serviço de ponte com BRIDGE_ROLE
         bridge_account: AccountId,
-        /// Emergency admin account (separate from owner)
+        /// Emergency admin account (separate from owner) / Conta de administrador de emergência (separada do proprietário)
         emergency_admin: AccountId,
         
-        // === SECURITY: Circuit Breaker ===
-        /// Emergency pause state
+        // === SECURITY: Circuit Breaker / SEGURANÇA: Disjuntor de Circuito ===
+        /// Emergency pause state / Estado de pausa de emergência
         paused: bool,
-        /// Pause reason for transparency
+        /// Pause reason for transparency / Motivo da pausa para transparência
         pause_reason: Option<String>,
-        /// Timestamp when paused
+        /// Timestamp when paused / Timestamp de quando foi pausado
         paused_at: Option<u64>,
         
-        // === SECURITY: Reentrancy Protection ===
-        /// Reentrancy guard mutex
+        // === SECURITY: Reentrancy Protection / SEGURANÇA: Proteção contra Reentrância ===
+        /// Reentrancy guard mutex / Mutex de proteção contra reentrância
         locked: bool,
         
-        // === SECURITY: Rate Limiting ===
-        /// Last mint timestamp for rate limiting
+        // === SECURITY: Rate Limiting / SEGURANÇA: Limitação de Taxa ===
+        /// Last mint timestamp for rate limiting / Último timestamp de mint para limitação de taxa
         last_mint_time: u64,
-        /// Cumulative mints in current window
+        /// Cumulative mints in current window / Mints acumulados na janela atual
         mint_window_amount: Balance,
-        /// Window start time
+        /// Window start time / Tempo de início da janela
         mint_window_start: u64,
         
-        /// Tax manager contract address
+        /// Tax manager contract address / Endereço do contrato gerenciador de taxas
         tax_manager: AccountId,
     }
 
-    /// @title LUSDT Events
-    /// @notice All events follow CEI pattern and include security context
+    /// @title LUSDT Events / Eventos LUSDT
+    /// @notice All events follow CEI pattern and include security context / Todos os eventos seguem o padrão CEI e incluem contexto de segurança
     #[ink(event)]
     pub struct Transfer {
         #[ink(topic)]
@@ -82,7 +84,7 @@ mod lusdt_token {
         #[ink(topic)]
         to: Option<AccountId>,
         value: Balance,
-        /// Security context
+        /// Security context / Contexto de segurança
         block_timestamp: u64,
     }
 
@@ -189,21 +191,23 @@ mod lusdt_token {
             bridge_account: AccountId,
             emergency_admin: AccountId,
         ) -> Self {
-            Self {
-                version: 1,
-                total_supply: 0,
-                balances: Mapping::new(),
-                allowances: Mapping::new(),
-                owner: Self::env().caller(),
-                bridge_account,
-                tax_manager,
-                emergency_admin,
-                paused: false,
-                locked: false,
-                mint_window_amount: 0,
-                mint_window_start: Self::env().block_timestamp(),
-                last_mint_time: Self::env().block_timestamp(),
-            }
+                    Self {
+            version: 1,
+            total_supply: 0,
+            balances: Mapping::new(),
+            allowances: Mapping::new(),
+            owner: Self::env().caller(),
+            bridge_account,
+            tax_manager,
+            emergency_admin,
+            paused: false,
+            pause_reason: None,
+            paused_at: None,
+            locked: false,
+            mint_window_amount: 0,
+            mint_window_start: Self::env().block_timestamp(),
+            last_mint_time: Self::env().block_timestamp(),
+        }
         }
 
         /// @notice Returns the contract version
