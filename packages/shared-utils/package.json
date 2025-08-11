@@ -1,0 +1,49 @@
+{
+  "name": "@lusdt/shared-utils",
+  "version": "1.0.0",
+  "description": "Shared utilities and helper functions for LUSDT frontend applications",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "rollup -c",
+    "dev": "rollup -c -w",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage",
+    "lint": "eslint src --ext .ts",
+    "lint:fix": "eslint src --ext .ts --fix",
+    "clean": "rm -rf dist node_modules"
+  },
+  "dependencies": {
+    "date-fns": "^4.1.0",
+    "zod": "^3.22.0",
+    "clsx": "^2.1.0",
+    "tailwind-merge": "^2.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "~5.8.3",
+    "rollup": "^4.9.0",
+    "@rollup/plugin-typescript": "^11.1.0",
+    "@rollup/plugin-node-resolve": "^15.2.0",
+    "@rollup/plugin-commonjs": "^25.0.0",
+    "rollup-plugin-peer-deps-external": "^2.2.4",
+    "vitest": "^3.2.4",
+    "eslint": "^9.30.1",
+    "@typescript-eslint/eslint-plugin": "^8.35.1",
+    "@typescript-eslint/parser": "^8.35.1"
+  },
+  "keywords": [
+    "utilities",
+    "helpers",
+    "validation",
+    "formatting",
+    "lusdt"
+  ],
+  "author": "LUSDT Team",
+  "license": "MIT"
+}

@@ -1,22 +1,27 @@
 #!/bin/bash
 #
 # Script para configurar um cofre multisig 3-de-5 na Solana para o LUSDT Bridge Treasury.
+# Script to set up a 3-of-5 multisig vault on Solana for the LUSDT Bridge Treasury.
 #
 # AVISO: Este script gera novas chaves privadas. Manuseie os arquivos gerados com
 # extremo cuidado. Em um ambiente de produção, as chaves dos guardiões devem
 # ser geradas em dispositivos seguros e isolados (preferencialmente hardware wallets).
 #
+# WARNING: This script generates new private keys. Handle the generated files with
+# extreme care. In a production environment, guardian keys should be generated
+# on secure and isolated devices (preferably hardware wallets).
+#
 
 set -e
 
-# --- Configurações ---
-# Altere para --url mainnet-beta para produção
+# --- Configurações / Configuration ---
+# Altere para --url mainnet-beta para produção / Change to --url mainnet-beta for production
 NETWORK_URL="devnet"
-# Endereço do token USDT na rede escolhida
+# Endereço do token USDT na rede escolhida / USDT token address on the chosen network
 # Devnet: Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr
 # Mainnet: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
 USDT_MINT_ADDRESS="Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr"
-# Número de guardiões
+# Número de guardiões / Number of guardians
 NUM_GUARDIANS=5
 # Threshold de assinaturas necessárias
 THRESHOLD=3
@@ -59,18 +64,28 @@ GUARDIAN_1_KEYPATH="$KEYS_DIR/guardian_1_keypair.json"
 GUARDIAN_1_PUBKEY=${GUARDIAN_PUBKEYS[0]}
 
 echo "   -> Verificando saldo do pagador (Guardião 1: $GUARDIAN_1_PUBKEY)..."
-solana balance "$GUARDIAN_1_KEYPATH" || true
-echo "   -> Solicitando airdrop para o pagador (pode demorar um pouco)..."
-solana airdrop 2 "$GUARDIAN_1_KEYPATH"
-echo "   -> Saldo atualizado:"
-solana balance "$GUARDIAN_1_KEYPATH"
+CURRENT_BALANCE=$(solana balance "$GUARDIAN_1_KEYPATH" | head -1 | cut -d' ' -f1)
+echo "$CURRENT_BALANCE SOL"
+
+# Verificar se temos pelo menos 0.5 SOL (suficiente para criar contas)
+if [[ "$CURRENT_BALANCE" == "0" ]]; then
+  echo "   -> Solicitando airdrop para o pagador (pode demorar um pouco)..."
+  solana airdrop 1 "$GUARDIAN_1_KEYPATH"
+  echo "   -> Saldo atualizado:"
+  solana balance "$GUARDIAN_1_KEYPATH"
+else
+  echo "   -> Saldo suficiente, continuando..."
+fi
 echo ""
 
 MULTISIG_ADDRESS_FILE="$KEYS_DIR/multisig_authority_address.txt"
 
 if [ ! -f "$MULTISIG_ADDRESS_FILE" ]; then
   echo "   -> Executando comando para criar a autoridade multisig..."
-  MULTISIG_ADDRESS=$(spl-token create-multisig --threshold $THRESHOLD ${GUARDIAN_PUBKEYS[@]} --fee-payer "$GUARDIAN_1_KEYPATH" | head -n 1 | awk '{print $3}')
+  # Sintaxe correta: spl-token create-multisig <MINIMUM_SIGNERS> <PUBKEY1> <PUBKEY2> ... --fee-payer
+  MULTISIG_CREATION_OUTPUT=$(spl-token create-multisig $THRESHOLD ${GUARDIAN_PUBKEYS[@]} --fee-payer "$GUARDIAN_1_KEYPATH" 2>&1)
+  echo "$MULTISIG_CREATION_OUTPUT"
+  MULTISIG_ADDRESS=$(echo "$MULTISIG_CREATION_OUTPUT" | grep -o '[1-9A-HJ-NP-Za-km-z]\{32,44\}' | head -1)
   echo "$MULTISIG_ADDRESS" > "$MULTISIG_ADDRESS_FILE"
   echo "   -> Autoridade multisig criada com sucesso!"
 else
@@ -91,7 +106,9 @@ TREASURY_ACCOUNT_FILE="$KEYS_DIR/treasury_token_account_address.txt"
 if [ ! -f "$TREASURY_ACCOUNT_FILE" ]; then
   echo "   -> Executando comando para criar a conta de token do tesouro..."
   # A conta de token é criada, e o --owner é a autoridade multisig.
-  TREASURY_TOKEN_ACCOUNT=$(spl-token create-account "$USDT_MINT_ADDRESS" --owner "$MULTISIG_ADDRESS" --fee-payer "$GUARDIAN_1_KEYPATH" | head -n 1 | awk '{print $3}')
+  TREASURY_CREATION_OUTPUT=$(spl-token create-account "$USDT_MINT_ADDRESS" --owner "$MULTISIG_ADDRESS" --fee-payer "$GUARDIAN_1_KEYPATH" 2>&1)
+  echo "$TREASURY_CREATION_OUTPUT"
+  TREASURY_TOKEN_ACCOUNT=$(echo "$TREASURY_CREATION_OUTPUT" | grep -o '[1-9A-HJ-NP-Za-km-z]\{32,44\}' | head -1)
   echo "$TREASURY_TOKEN_ACCOUNT" > "$TREASURY_ACCOUNT_FILE"
   echo "   -> Conta do Tesouro criada com sucesso!"
 else
