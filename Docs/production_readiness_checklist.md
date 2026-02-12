@@ -5,7 +5,7 @@
 **✅ APROVADO PARA PRODUÇÃO COM RECOMENDAÇÕES**
 
 **Data:** Janeiro 2025  
-**Versão:** ink! 5.1.1  
+**Versão:** ink! 4.2.1  
 **Auditoria:** Completa  
 **Testes:** 20/20 passando (100% cobertura crítica)  
 

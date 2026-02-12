@@ -10,7 +10,7 @@
 
 O backend do LUSDT é uma solução híbrida on-chain/off-chain projetada para máxima segurança e descentralização progressiva.
 
-- **On-chain (Rede Lunes):** Smart Contracts em **Ink! 5.1.x** que governam a lógica do token LUSDT, taxas e distribuição de fundos.
+- **On-chain (Rede Lunes):** Smart Contracts em **Ink! 4.2.1** que governam a lógica do token LUSDT, taxas e distribuição de fundos.
 - **On-chain (Rede Solana):** Um Cofre Multisig (ex: Squads Protocol) que armazena o colateral 1:1 em USDT-SPL.
 - **Off-chain (Serviço de Ponte):** Um oráculo robusto que monitora e retransmite eventos entre as redes Lunes e Solana. Este serviço é o único componente autorizado a iniciar a emissão (mint) de LUSDT.
 
@@ -68,11 +68,16 @@ Desacopla a lógica de taxas, seguindo o princípio de responsabilidade única.
 
 - `owner`: `AccountId` - Endereço de administrador (o mesmo do `lusdt_token`).
 - `lunes_token_address`: `AccountId` - Endereço do contrato LUNES.
-- `distribution_wallets`: `struct` com os endereços para `dev`, `dao`, `backing_fund`, `rewards_fund`.
-- `burn_address`: `AccountId` - Endereço irrecuperável para queima.
+- `distribution_wallets`: `struct DistributionWallets` com `dev_solana`, `dev_lunes`, `insurance_fund`, `staking_rewards_pool`.
+  - `dev_solana`: carteira dev para receber 80% das taxas USDT (configurável pelo admin).
+  - `dev_lunes`: carteira dev para receber 80% das taxas LUSDT (configurável pelo admin).
+  - `insurance_fund`: fundo de seguro que recebe 15% de todas as taxas (fixo, não editável).
+  - `staking_rewards_pool`: pool de staking que recebe 5% de todas as taxas (distribuição mensal para stakers ≥100k LUNES).
 - `fee_config`: `struct` contendo as porcentagens de taxas (em basis points) e as faixas de volume para a taxa adaptativa.
 - `monthly_volume_usd`: `u128`.
 - `last_volume_reset_timestamp`: `Timestamp`.
+- `burn_engine_address`: `Option<AccountId>` - Endereço do contrato BurnEngine para queima deflacionária de LUNES.
+- `lunes_burn_fee_bps`: `u16` - Taxa de queima LUNES em basis points (padrão: 10 = 0.10%).
 
 #### 2.2.2. Funções (Mensagens `#[ink(message)]`)
 

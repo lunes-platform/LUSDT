@@ -1,0 +1,14 @@
+{
+  "network": "local",
+  "timestamp": "2026-02-11T23:59:37.128Z",
+  "rpc": "ws://localhost:9944",
+  "contracts": {
+    "tax_manager": "5EVuvhZGXZXezWoKzbMfcVDcbGy8ovNUnemAjw6LA85adZvP",
+    "lusdt_token": "5G5SWex3XwZptL1i1xiBsZfykvPDSVqnFgZRUJoB96YrzrGa"
+  },
+  "wallets": {
+    "dev_solana": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+    "dev_lunes": "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty",
+    "insurance_fund": "5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y"
+  }
+}

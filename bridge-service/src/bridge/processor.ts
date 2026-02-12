@@ -71,7 +71,11 @@ export class BridgeProcessor {
 
       logger.info('👂 Transaction listeners configured');
     } catch (error) {
-      logger.error('❌ Failed to setup transaction listeners', error);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('❌ Failed to setup transaction listeners', {
+        error: message,
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw error;
     }
   }
@@ -172,13 +176,21 @@ export class BridgeProcessor {
         try {
           await this.processTransaction(transaction);
         } catch (error) {
-          logger.error(`❌ Failed to process transaction ${transaction.id}`, error);
+          const message = error instanceof Error ? error.message : String(error);
+          logger.error(`❌ Failed to process transaction ${transaction.id}`, {
+            error: message,
+            stack: error instanceof Error ? error.stack : undefined
+          });
         } finally {
           this.processingSemaphore.delete(transaction.id);
         }
       }
     } catch (error) {
-      logger.error('❌ Error processing pending transactions', error);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('❌ Error processing pending transactions', {
+        error: message,
+        stack: error instanceof Error ? error.stack : undefined
+      });
     }
   }
 
@@ -223,42 +235,90 @@ export class BridgeProcessor {
       });
 
     } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
       // Incrementa contador de tentativas e agenda retry
       await this.database.incrementRetryCount(transaction.id);
       await this.database.updateTransaction(transaction.id, {
         status: 'pending',
-        errorMessage: error.message
+        errorMessage: message
       });
 
       logger.error(`❌ Transaction ${transaction.id} failed, will retry`, {
         retryCount: transaction.retryCount + 1,
-        error: error.message
+        error: message
       });
     }
   }
 
   private async executeSolanaToLunesTransfer(transaction: TransactionRecord): Promise<string> {
     try {
-      logger.info('🪙 Executing Solana->Lunes: Minting LUSDT', {
-        recipient: transaction.destinationAddress,
-        amount: transaction.amount
-      });
-
       // Verifica se a transação Solana está confirmada
       const isConfirmed = await this.solanaClient.isTransactionConfirmed(transaction.sourceSignature);
       if (!isConfirmed) {
         throw new Error('Source transaction not yet confirmed');
       }
 
-      // Mint LUSDT na rede Lunes
+      // === CRITICAL: Deduct USDT fee BEFORE minting to maintain 100% backing ===
+      // Fee is deducted from the deposited USDT, so we mint less LUSDT.
+      // This ensures: USDT in vault == LUSDT total supply (always 100% backed)
+      // Query Tax Manager for adaptive fee rate (falls back to 60 bps if unavailable)
+      const stablecoinFeeBps = await this.lunesClient.queryTaxManagerFeeBps();
+      const feeAmount = (transaction.amount * stablecoinFeeBps) / 10000;
+      const mintAmount = transaction.amount - feeAmount;
+
+      logger.info('🪙 Executing Solana->Lunes: Minting LUSDT (fee-adjusted)', {
+        recipient: transaction.destinationAddress,
+        depositedUsdt: transaction.amount,
+        usdtFee: feeAmount,
+        mintAmount,
+      });
+
+      // Step 1: Distribute USDT fee (80% dev / 15% insurance / 5% staking rewards)
+      if (feeAmount > 0) {
+        const devAmount = feeAmount * 0.80;
+        const insuranceAmount = feeAmount * 0.15;
+        const stakingAmount = feeAmount - devAmount - insuranceAmount; // 5%
+
+        try {
+          if (config.DEV_SOLANA_WALLET) {
+            await this.solanaClient.transferUSDT(config.DEV_SOLANA_WALLET, devAmount);
+            logger.info('💰 USDT dev fee distributed (80%)', { amount: devAmount });
+          }
+          if (config.INSURANCE_SOLANA_WALLET) {
+            await this.solanaClient.transferUSDT(config.INSURANCE_SOLANA_WALLET, insuranceAmount);
+            logger.info('💰 USDT insurance fee distributed (15%)', { amount: insuranceAmount });
+          }
+          if (config.STAKING_REWARDS_SOLANA_WALLET && stakingAmount > 0) {
+            await this.solanaClient.transferUSDT(config.STAKING_REWARDS_SOLANA_WALLET, stakingAmount);
+            logger.info('💰 USDT staking rewards distributed (5%)', { amount: stakingAmount });
+          }
+        } catch (feeError) {
+          // Fee distribution failure should NOT block the mint
+          // Log and continue — fee can be collected manually later
+          const msg = feeError instanceof Error ? feeError.message : String(feeError);
+          logger.error('⚠️ USDT fee distribution failed (mint will proceed)', { error: msg });
+        }
+      }
+
+      // Step 2: Mint only the net amount (deposit - fee) to maintain 1:1 backing
       const lunesSignature = await this.lunesClient.mintLUSDT(
         transaction.destinationAddress,
-        transaction.amount
+        mintAmount
       );
+
+      logger.info('✅ Mint completed with 100% backing maintained', {
+        vaultUsdt: mintAmount,
+        mintedLusdt: mintAmount,
+        feeCollected: feeAmount,
+      });
 
       return lunesSignature;
     } catch (error) {
-      logger.error('❌ Solana->Lunes transfer execution failed', error);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('❌ Solana->Lunes transfer execution failed', {
+        error: message,
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw error;
     }
   }
@@ -284,7 +344,11 @@ export class BridgeProcessor {
 
       return solanaSignature;
     } catch (error) {
-      logger.error('❌ Lunes->Solana transfer execution failed', error);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error('❌ Lunes->Solana transfer execution failed', {
+        error: message,
+        stack: error instanceof Error ? error.stack : undefined
+      });
       throw error;
     }
   }

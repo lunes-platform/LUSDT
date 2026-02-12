@@ -1,0 +1,51 @@
+# ============================================================
+# LUSDT Bridge Service - Local Testnet Configuration
+# Copie este arquivo para .env e ajuste conforme necessário
+# cp env-local-testnet.example .env
+# ============================================================
+
+# Server
+PORT=3001
+NODE_ENV=development
+ALLOWED_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:5174
+
+# Solana Configuration (Devnet para testes)
+SOLANA_RPC_URL=https://api.devnet.solana.com
+SOLANA_WALLET_PRIVATE_KEY=
+SOLANA_MULTISIG_VAULT=
+USDT_TOKEN_MINT=Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr
+
+# Lunes Configuration (Local Testnet)
+LUNES_RPC_URL=ws://localhost:9944
+LUNES_WALLET_SEED=//Alice
+TAX_MANAGER_CONTRACT_ADDRESS=5ETkoMMT5TnSBwgcc7ETk31DexEdYP7332kHM7wkgn4FENuw
+LUSDT_CONTRACT_ADDRESS=5CRWVeC2aqcTRjHbLMUi1ep3xtffmdQEnyNqJAGZUtPUpURc
+LUSDT_CONTRACT_ABI_PATH=../target/ink/lusdt_token/lusdt_token.json
+
+# Database (Local)
+DATABASE_URL=postgresql://user:pass@localhost:5432/bridge_db
+REDIS_URL=redis://localhost:6379
+
+# Security
+RATE_LIMIT_PER_HOUR=100
+MAX_TRANSACTION_VALUE=100000
+TREASURY_MIN_BALANCE=50000
+
+# Monitoring
+HEALTH_CHECK_INTERVAL=30000
+PARITY_CHECK_INTERVAL=60000
+PARITY_DEVIATION_THRESHOLD=0.01
+
+# Bridge Service
+REQUIRED_CONFIRMATIONS=finalized
+MAX_RETRIES=3
+RETRY_DELAY=5000
+PROCESSING_TIMEOUT=30000
+
+# ============================================================
+# Carteiras de Distribuição de Taxas (Local Testnet)
+# 80% -> dev wallet (por rede), 20% -> insurance fund (fixo)
+# ============================================================
+# dev_solana: //Alice  5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+# dev_lunes:  //Bob    5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty
+# insurance:  //Charlie 5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y

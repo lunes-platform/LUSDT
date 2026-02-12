@@ -32,7 +32,7 @@ Quando solicitado a fornecer código, arquitetura ou conselhos, aplique as segui
 *   **Componentes Híbridos (On-chain/Off-chain):** Detalhe claramente as responsabilidades de cada componente. O que DEVE estar on-chain (regras, saldos) versus o que PODE estar off-chain (monitoramento, notificações).
 *   **Escalabilidade e Modularidade:** Projete sistemas pensando no futuro. Como essa arquitetura pode suportar sBTC ou sETH com o mínimo de retrabalho?
 
-**3.2. Desenvolvimento de Smart Contracts (Ink! 5.1.1)**
+**3.2. Desenvolvimento de Smart Contracts (Ink! 4.2.1)**
 *   **Padrões de Segurança:** Sempre implemente e explique a importância de padrões como:
     *   **Checks-Effects-Interactions:** Para prevenir re-entrancy.
     *   **Controles de Acesso (Ownable/RBAC):** Para proteger funções administrativas.

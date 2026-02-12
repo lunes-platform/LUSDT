@@ -2,12 +2,12 @@
 
 ## Resumo Executivo
 
-Esta análise de segurança foi conduzida seguindo as melhores práticas do **OWASP Top 10 para Smart Contracts** e as diretrizes de segurança específicas para **ink! 5.1.1**. O contrato LUSDT foi submetido a uma auditoria abrangente incluindo análise estática, testes de segurança e revisão manual de código.
+Esta análise de segurança foi conduzida seguindo as melhores práticas do **OWASP Top 10 para Smart Contracts** e as diretrizes de segurança específicas para **ink! 4.2.1**. O contrato LUSDT foi submetido a uma auditoria abrangente incluindo análise estática, testes de segurança e revisão manual de código.
 
 ### Status da Auditoria: ✅ APROVADO COM RECOMENDAÇÕES
 
 **Data da Auditoria:** Janeiro 2025  
-**Versão Auditada:** ink! 5.1.1  
+**Versão Auditada:** ink! 4.2.1  
 **Cobertura de Testes:** 20 testes unitários (100% das funções críticas)  
 **Ferramentas Utilizadas:** cargo clippy, testes TDD, análise manual  
 
@@ -64,7 +64,7 @@ let new_balance_to = balance_to
 
 ### ✅ 1. Reentrancy
 **Status:** PROTEGIDO  
-- ink! 5.1.1 previne reentrância por padrão
+- ink! 4.2.1 previne reentrância por padrão
 - Padrão Checks-Effects-Interactions implementado
 - Testes específicos validam comportamento correto
 

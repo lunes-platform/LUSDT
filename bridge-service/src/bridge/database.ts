@@ -1,3 +1,4 @@
+import { Pool, QueryResult } from 'pg';
 import { logger } from '../utils/logger';
 import { config } from '../config/env';
 
@@ -31,86 +32,134 @@ export interface BridgeStatistics {
 }
 
 export class Database {
-  private transactions: Map<string, TransactionRecord>;
+  private pool: Pool;
   private isInitialized: boolean = false;
 
   constructor() {
-    this.transactions = new Map();
+    this.pool = new Pool({
+      connectionString: config.DATABASE_URL,
+      ssl: config.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
+    });
   }
 
   async initialize(): Promise<void> {
     try {
-      logger.info('💾 Initializing database...');
+      logger.info('💾 Initializing database connection...');
       
-      // Para uma implementação real, você conectaria a um banco real (PostgreSQL, MongoDB, etc.)
-      // Por enquanto, vamos usar um armazenamento em memória
-      
-      if (config.NODE_ENV === 'production') {
-        logger.warn('⚠️  Using in-memory database in production - data will be lost on restart!');
-        logger.warn('⚠️  Consider implementing persistent database connection');
+      // Test connection
+      const client = await this.pool.connect();
+      try {
+        await client.query('SELECT NOW()');
+        this.isInitialized = true;
+        logger.info('✅ Database connected successfully');
+      } finally {
+        client.release();
       }
-
-      // Aqui seria onde você configuraria:
-      // - Pool de conexões PostgreSQL
-      // - Configuração MongoDB
-      // - Migrações de banco
-      // - Índices necessários
-
-      this.isInitialized = true;
-      logger.info('✅ Database initialized successfully');
     } catch (error) {
-      logger.error('❌ Failed to initialize database', error);
+      logger.error('❌ Failed to initialize database', error as Error);
       throw error;
     }
+  }
+
+  private mapRowToTransaction(row: any): TransactionRecord {
+    return {
+      id: row.id,
+      sourceChain: row.source_chain,
+      destinationChain: row.destination_chain,
+      sourceSignature: row.source_signature,
+      destinationSignature: row.destination_signature,
+      amount: parseFloat(row.amount),
+      sourceAddress: row.source_address,
+      destinationAddress: row.destination_address,
+      status: row.status,
+      createdAt: row.created_at,
+      completedAt: row.completed_at,
+      retryCount: row.retry_count,
+      errorMessage: row.error_message,
+      metadata: row.metadata
+    };
   }
 
   async saveTransaction(transaction: Omit<TransactionRecord, 'id' | 'createdAt' | 'retryCount'>): Promise<string> {
     try {
       const id = this.generateTransactionId();
-      const record: TransactionRecord = {
-        ...transaction,
-        id,
-        createdAt: new Date(),
-        retryCount: 0
-      };
-
-      this.transactions.set(id, record);
       
-      logger.info('💾 Transaction saved', { 
+      const query = `
+        INSERT INTO transactions (
+          id, source_chain, destination_chain, source_signature, 
+          destination_signature, amount, source_address, destination_address, 
+          status, created_at, retry_count, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), 0, $10)
+        RETURNING id
+      `;
+
+      const values = [
+        id,
+        transaction.sourceChain,
+        transaction.destinationChain,
+        transaction.sourceSignature,
+        transaction.destinationSignature || null,
+        transaction.amount,
+        transaction.sourceAddress,
+        transaction.destinationAddress,
+        transaction.status,
+        transaction.metadata || {}
+      ];
+
+      await this.pool.query(query, values);
+      
+      logger.info('💾 Transaction saved to DB', { 
         id, 
         sourceChain: transaction.sourceChain,
-        destinationChain: transaction.destinationChain,
-        amount: transaction.amount
+        amount: transaction.amount 
       });
 
       return id;
     } catch (error) {
-      logger.error('❌ Failed to save transaction', error);
+      logger.error('❌ Failed to save transaction', error as Error);
       throw error;
     }
   }
 
   async updateTransaction(id: string, updates: Partial<TransactionRecord>): Promise<void> {
     try {
-      const existing = this.transactions.get(id);
-      if (!existing) {
-        throw new Error(`Transaction ${id} not found`);
+      // Build dynamic update query
+      const setClauses: string[] = [];
+      const values: any[] = [];
+      let paramIndex = 1;
+
+      // Helper to add field
+      const addField = (col: string, val: any) => {
+        setClauses.push(`${col} = $${paramIndex++}`);
+        values.push(val);
+      };
+
+      if (updates.status) addField('status', updates.status);
+      if (updates.destinationSignature) addField('destination_signature', updates.destinationSignature);
+      if (updates.errorMessage) addField('error_message', updates.errorMessage);
+      if (updates.metadata) addField('metadata', updates.metadata);
+      
+      // Handle completion timestamp
+      if (updates.status === 'completed') {
+        setClauses.push(`completed_at = COALESCE(completed_at, NOW())`);
       }
 
-      const updated = { 
-        ...existing, 
-        ...updates,
-        // Se status mudou para completed, marca o timestamp
-        ...(updates.status === 'completed' && !existing.completedAt ? { completedAt: new Date() } : {})
-      };
+      if (setClauses.length === 0) return;
+
+      values.push(id);
+      const query = `
+        UPDATE transactions 
+        SET ${setClauses.join(', ')} 
+        WHERE id = $${paramIndex}
+      `;
+
+      const result = await this.pool.query(query, values);
+
+      if (result.rowCount === 0) {
+        throw new Error(`Transaction ${id} not found`);
+      }
       
-      this.transactions.set(id, updated);
-      
-      logger.info('📝 Transaction updated', { 
-        id, 
-        status: updated.status,
-        updates: Object.keys(updates)
-      });
+      logger.info('📝 Transaction updated in DB', { id, updates: Object.keys(updates) });
     } catch (error) {
       logger.error('❌ Failed to update transaction', { id, error });
       throw error;
@@ -119,7 +168,10 @@ export class Database {
 
   async getTransaction(id: string): Promise<TransactionRecord | null> {
     try {
-      return this.transactions.get(id) || null;
+      const result = await this.pool.query('SELECT * FROM transactions WHERE id = $1', [id]);
+      
+      if (result.rows.length === 0) return null;
+      return this.mapRowToTransaction(result.rows[0]);
     } catch (error) {
       logger.error('❌ Failed to get transaction', { id, error });
       throw error;
@@ -128,13 +180,15 @@ export class Database {
 
   async getTransactionBySignature(signature: string): Promise<TransactionRecord | null> {
     try {
-      for (const transaction of this.transactions.values()) {
-        if (transaction.sourceSignature === signature || 
-            transaction.destinationSignature === signature) {
-          return transaction;
-        }
-      }
-      return null;
+      const query = `
+        SELECT * FROM transactions 
+        WHERE source_signature = $1 OR destination_signature = $1
+        LIMIT 1
+      `;
+      const result = await this.pool.query(query, [signature]);
+      
+      if (result.rows.length === 0) return null;
+      return this.mapRowToTransaction(result.rows[0]);
     } catch (error) {
       logger.error('❌ Failed to get transaction by signature', { signature, error });
       throw error;
@@ -143,22 +197,28 @@ export class Database {
 
   async getPendingTransactions(): Promise<TransactionRecord[]> {
     try {
-      const pending = Array.from(this.transactions.values())
-        .filter(tx => tx.status === 'pending' || tx.status === 'processing')
-        .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
-      
-      return pending;
+      const query = `
+        SELECT * FROM transactions 
+        WHERE status IN ('pending', 'processing')
+        ORDER BY created_at ASC
+      `;
+      const result = await this.pool.query(query);
+      return result.rows.map(this.mapRowToTransaction);
     } catch (error) {
-      logger.error('❌ Failed to get pending transactions', error);
+      logger.error('❌ Failed to get pending transactions', error as Error);
       throw error;
     }
   }
 
   async getTransactionsByStatus(status: TransactionRecord['status']): Promise<TransactionRecord[]> {
     try {
-      return Array.from(this.transactions.values())
-        .filter(tx => tx.status === status)
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      const query = `
+        SELECT * FROM transactions 
+        WHERE status = $1
+        ORDER BY created_at DESC
+      `;
+      const result = await this.pool.query(query, [status]);
+      return result.rows.map(this.mapRowToTransaction);
     } catch (error) {
       logger.error('❌ Failed to get transactions by status', { status, error });
       throw error;
@@ -167,72 +227,72 @@ export class Database {
 
   async getTransactionHistory(limit: number = 100, offset: number = 0): Promise<TransactionRecord[]> {
     try {
-      const allTransactions = Array.from(this.transactions.values())
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-      
-      return allTransactions.slice(offset, offset + limit);
+      const query = `
+        SELECT * FROM transactions 
+        ORDER BY created_at DESC
+        LIMIT $1 OFFSET $2
+      `;
+      const result = await this.pool.query(query, [limit, offset]);
+      return result.rows.map(this.mapRowToTransaction);
     } catch (error) {
-      logger.error('❌ Failed to get transaction history', error);
+      logger.error('❌ Failed to get transaction history', error as Error);
       throw error;
     }
   }
 
   async getStatistics(): Promise<BridgeStatistics> {
     try {
-      const allTransactions = Array.from(this.transactions.values());
-      const now = new Date();
-      const dayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-      const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      // Using the VIEW created in schema.sql would be more efficient, 
+      // but we'll use direct queries to be safe if view doesn't exist yet
+      const query = `
+        SELECT
+          COUNT(*) as total_transactions,
+          COUNT(*) FILTER (WHERE status = 'completed') as completed_transactions,
+          COUNT(*) FILTER (WHERE status IN ('pending', 'processing')) as pending_transactions,
+          COUNT(*) FILTER (WHERE status = 'failed') as failed_transactions,
+          COALESCE(SUM(amount), 0) as total_volume,
+          COALESCE(SUM(amount) FILTER (WHERE created_at >= NOW() - INTERVAL '24 hours'), 0) as daily_volume,
+          COALESCE(SUM(amount) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days'), 0) as weekly_volume,
+          COALESCE(SUM(amount) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days'), 0) as monthly_volume
+        FROM transactions
+      `;
 
-      const completed = allTransactions.filter(tx => tx.status === 'completed');
-      const pending = allTransactions.filter(tx => tx.status === 'pending' || tx.status === 'processing');
-      const failed = allTransactions.filter(tx => tx.status === 'failed');
+      const result = await this.pool.query(query);
+      const row = result.rows[0];
 
-      const dailyTransactions = allTransactions.filter(tx => tx.createdAt >= dayAgo);
-      const weeklyTransactions = allTransactions.filter(tx => tx.createdAt >= weekAgo);
-      const monthlyTransactions = allTransactions.filter(tx => tx.createdAt >= monthAgo);
-
-      // Calcula tempos de processamento
-      const processingTimes = completed
-        .filter(tx => tx.completedAt)
-        .map(tx => tx.completedAt!.getTime() - tx.createdAt.getTime());
+      // Calculate average processing time separately
+      const timeQuery = `
+        SELECT AVG(EXTRACT(EPOCH FROM (completed_at - created_at))) as avg_time
+        FROM transactions
+        WHERE status = 'completed' AND completed_at IS NOT NULL
+      `;
+      const timeResult = await this.pool.query(timeQuery);
       
-      const averageProcessingTime = processingTimes.length > 0 
-        ? processingTimes.reduce((a, b) => a + b, 0) / processingTimes.length
-        : 0;
-
       return {
-        totalTransactions: allTransactions.length,
-        completedTransactions: completed.length,
-        pendingTransactions: pending.length,
-        failedTransactions: failed.length,
-        totalVolumeUSDT: allTransactions.reduce((sum, tx) => sum + tx.amount, 0),
-        dailyVolume: dailyTransactions.reduce((sum, tx) => sum + tx.amount, 0),
-        weeklyVolume: weeklyTransactions.reduce((sum, tx) => sum + tx.amount, 0),
-        monthlyVolume: monthlyTransactions.reduce((sum, tx) => sum + tx.amount, 0),
-        averageProcessingTime: Math.round(averageProcessingTime / 1000) // em segundos
+        totalTransactions: parseInt(row.total_transactions),
+        completedTransactions: parseInt(row.completed_transactions),
+        pendingTransactions: parseInt(row.pending_transactions),
+        failedTransactions: parseInt(row.failed_transactions),
+        totalVolumeUSDT: parseFloat(row.total_volume),
+        dailyVolume: parseFloat(row.daily_volume),
+        weeklyVolume: parseFloat(row.weekly_volume),
+        monthlyVolume: parseFloat(row.monthly_volume),
+        averageProcessingTime: Math.round(parseFloat(timeResult.rows[0].avg_time || '0'))
       };
     } catch (error) {
-      logger.error('❌ Failed to get statistics', error);
+      logger.error('❌ Failed to get statistics', error as Error);
       throw error;
     }
   }
 
   async incrementRetryCount(id: string): Promise<void> {
     try {
-      const transaction = this.transactions.get(id);
-      if (!transaction) {
-        throw new Error(`Transaction ${id} not found`);
-      }
-
-      transaction.retryCount += 1;
-      this.transactions.set(id, transaction);
-
-      logger.info('🔄 Transaction retry count incremented', { 
-        id, 
-        retryCount: transaction.retryCount 
-      });
+      const query = `
+        UPDATE transactions 
+        SET retry_count = retry_count + 1 
+        WHERE id = $1
+      `;
+      await this.pool.query(query, [id]);
     } catch (error) {
       logger.error('❌ Failed to increment retry count', { id, error });
       throw error;
@@ -241,33 +301,28 @@ export class Database {
 
   async cleanup(): Promise<void> {
     try {
-      const now = new Date();
-      const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // 30 dias
-
-      let cleaned = 0;
-      for (const [id, transaction] of this.transactions.entries()) {
-        // Remove transações antigas que foram completadas ou falharam
-        if ((transaction.status === 'completed' || transaction.status === 'failed') &&
-            transaction.createdAt < cutoff) {
-          this.transactions.delete(id);
-          cleaned++;
-        }
-      }
-
-      if (cleaned > 0) {
-        logger.info(`🧹 Cleaned up ${cleaned} old transactions`);
+      // Archive or delete old completed/failed transactions (> 30 days)
+      const query = `
+        DELETE FROM transactions 
+        WHERE status IN ('completed', 'failed') 
+        AND created_at < NOW() - INTERVAL '30 days'
+      `;
+      const result = await this.pool.query(query);
+      
+      if (result.rowCount && result.rowCount > 0) {
+        logger.info(`🧹 Cleaned up ${result.rowCount} old transactions`);
       }
     } catch (error) {
-      logger.error('❌ Failed to cleanup database', error);
+      logger.error('❌ Failed to cleanup database', error as Error);
     }
   }
 
   async close(): Promise<void> {
     try {
-      // Para uma implementação real, você fecharia as conexões do banco
+      await this.pool.end();
       logger.info('📴 Database connections closed');
     } catch (error) {
-      logger.error('❌ Failed to close database', error);
+      logger.error('❌ Failed to close database', error as Error);
       throw error;
     }
   }
@@ -278,12 +333,19 @@ export class Database {
     return `tx_${timestamp}_${random}`;
   }
 
-  // Métodos para debugging/monitoring
   async getHealthStatus(): Promise<any> {
-    return {
-      isConnected: this.isInitialized,
-      totalRecords: this.transactions.size,
-      lastUpdate: new Date().toISOString()
-    };
+    try {
+      const result = await this.pool.query('SELECT COUNT(*) as count FROM transactions');
+      return {
+        isConnected: this.isInitialized,
+        totalRecords: parseInt(result.rows[0].count),
+        lastUpdate: new Date().toISOString()
+      };
+    } catch (error) {
+      return {
+        isConnected: false,
+        error: (error as Error).message
+      };
+    }
   }
 }
