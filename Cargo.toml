@@ -3,7 +3,10 @@ resolver = "2"
 members = [
     "contracts/lusdt_token",
     "contracts/tax_manager",
+    "contracts/burn_engine",
+    "contracts/staking_manager",
     "contracts/mock_lunes_token",
     "contracts/mock_flipper",
     "contracts/common",
+    "contracts/integration-tests",
 ] 

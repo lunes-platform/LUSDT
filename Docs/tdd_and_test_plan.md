@@ -84,25 +84,35 @@ A seguir, uma lista inicial de casos de teste que guiarão a primeira fase de de
 
 ### 3.2. Contrato `tax_manager`
 
-#### Função: `process_fees()` para Emissão (Mint)
+#### Função: `process_burn_fee_only()` para Emissão (Mint) - Modelo v3
 
-- **Given:** Uma taxa de emissão de 100 LUNES é processada.
-  - **When:** `process_fees(Mint, ...)` é chamado.
+- **Given:** Um mint de 1000 LUSDT é processado (USDT fee tratada pelo bridge).
+  - **When:** `process_burn_fee_only(Mint, user, 1000)` é chamado.
   - **Then:**
-    - O `dev_wallet` deve receber 40 LUNES.
-    - O `backing_fund_wallet` deve receber 25 LUNES.
-    - O `dao_wallet` deve receber 20 LUNES.
-    - O `rewards_fund_wallet` deve receber 15 LUNES.
+    - Cobra 0.10% LUNES burn fee do usuário.
+    - Transfere LUNES burn fee para o BurnEngine.
+    - Emite evento `DualFeesProcessed` com `stablecoin_fee: 0`.
+    - Atualiza `monthly_volume_usd`.
 
-#### Função: `process_fees()` para Resgate (Burn)
+#### Função: `process_dual_fee()` para Resgate (Burn) - Modelo v3
 
-- **Given:** Uma taxa de resgate de 100 LUNES é processada para `user_a`.
-  - **When:** `process_fees(Burn, user_a, ...)` é chamado.
+- **Given:** Uma taxa de resgate de 100 (LUSDT) é processada com dual-fee.
+  - **When:** `process_dual_fee(Burn, user, amount, FeeType::Lusdt)` é chamado.
   - **Then:**
-    - O `user_a` (bônus) deve receber 20 LUNES.
-    - O `burn_address` deve receber 20 LUNES.
-    - O `dev_wallet` deve receber 40 LUNES.
-    - O `dao_wallet` deve receber 20 LUNES.
+    - O `dev_lunes` deve receber 80 (80% da taxa em LUSDT).
+    - O `insurance_fund` deve receber 15 (15% da taxa em LUSDT, fixo).
+    - O `staking_rewards_pool` deve receber 5 (5% da taxa em LUSDT, staking mensal).
+    - Cobra 0.10% LUNES burn fee → envia ao BurnEngine.
+    - Emite evento `DualFeesProcessed`.
+
+#### Distribuição de taxas USDT via Bridge (Mint) - Modelo v3
+
+- **Given:** O bridge coleta 100 USDT de taxa antes do mint.
+  - **When:** Bridge distribui a taxa em Solana.
+  - **Then:**
+    - `DEV_SOLANA_WALLET` deve receber 80 USDT (80%).
+    - `INSURANCE_SOLANA_WALLET` deve receber 15 USDT (15%).
+    - `STAKING_REWARDS_SOLANA_WALLET` deve receber 5 USDT (5%).
 
 ---
 

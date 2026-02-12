@@ -3,23 +3,35 @@ use ink::primitives::AccountId;
 pub type Timestamp = u64;
 pub type Balance = u128;
 
-/// Configuration for fee distribution wallets.
-#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, scale_info::TypeInfo, ink::storage::traits::StorageLayout)]
+/// Configuration for fee distribution wallets (v3 model: 80% dev / 15% insurance / 5% staking).
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
 pub struct DistributionWallets {
-    /// Development team wallet (40% for mint, 40% for burn).
-    pub dev: AccountId,
-    /// DAO treasury wallet (20% for mint, 20% for burn).
-    pub dao: AccountId,
-    /// Backing fund wallet (25% for mint only).
-    pub backing_fund: AccountId,
-    /// Rewards fund wallet (15% for mint only).
-    pub rewards_fund: AccountId,
-    /// Burn address for token destruction (20% for burn only).
-    pub burn_address: AccountId,
+    /// Dev wallet for Solana network (receives 80% of USDT fees). Configurable.
+    pub dev_solana: AccountId,
+    /// Dev wallet for Lunes network (receives 80% of LUSDT fees). Configurable.
+    pub dev_lunes: AccountId,
+    /// Insurance fund wallet (receives 15% of all fees). Fixed, non-editable.
+    pub insurance_fund: AccountId,
+    /// Staking rewards pool (receives 5% of all fees). Monthly distribution to stakers ≥100k LUNES.
+    pub staking_rewards_pool: AccountId,
+}
+
+/// Fee payment type for flexible fee processing.
+#[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode, Clone, Copy)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+pub enum FeeType {
+    /// Pay fees in LUNES tokens
+    Lunes,
+    /// Pay fees in LUSDT tokens
+    Lusdt,
+    /// Mark fees for USDT payment via bridge (emit event only)
+    Usdt,
 }
 
 /// Fee configuration with adaptive rates based on volume.
-#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode, scale_info::TypeInfo, ink::storage::traits::StorageLayout)]
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+#[cfg_attr(feature = "std", derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout))]
 pub struct FeeConfig {
     /// Base fee in basis points (100 = 1%).
     pub base_fee_bps: u16,

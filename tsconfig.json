@@ -1,8 +1,8 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
-    "allowJs": false,
+    "target": "ES2020",
+    "lib": ["DOM", "DOM.Iterable", "ES6"],
+    "allowJs": true,
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
@@ -10,7 +10,7 @@
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
     "module": "ESNext",
-    "moduleResolution": "bundler",
+    "moduleResolution": "node",
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
@@ -18,28 +18,40 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "outDir": "dist",
     "baseUrl": ".",
     "paths": {
-      "@lusdt/shared-components": ["./packages/shared-components/src"],
-      "@lusdt/blockchain-services": ["./packages/blockchain-services/src"],
-      "@lusdt/shared-utils": ["./packages/shared-utils/src"]
+      "@lusdt/shared-components": ["packages/shared-components/src"],
+      "@lusdt/shared-components/*": ["packages/shared-components/src/*"],
+      "@lusdt/blockchain-services": ["packages/blockchain-services/src"],
+      "@lusdt/blockchain-services/*": ["packages/blockchain-services/src/*"],
+      "@lusdt/shared-utils": ["packages/shared-utils/src"],
+      "@lusdt/shared-utils/*": ["packages/shared-utils/src/*"],
+      "@lusdt/config": ["packages/config/src"],
+      "@lusdt/config/*": ["packages/config/src/*"]
     }
   },
   "include": [
     "packages/*/src/**/*",
-    "apps/*/src/**/*"
+    "apps/*/src/**/*",
+    "**/*.ts",
+    "**/*.tsx"
   ],
   "exclude": [
     "node_modules",
     "dist",
     "build",
-    "coverage"
+    ".next",
+    "coverage",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/*.spec.ts",
+    "**/*.spec.tsx"
   ],
   "references": [
-    { "path": "./packages/shared-components" },
-    { "path": "./packages/blockchain-services" },
+    { "path": "./packages/config" },
     { "path": "./packages/shared-utils" },
+    { "path": "./packages/blockchain-services" },
+    { "path": "./packages/shared-components" },
     { "path": "./apps/admin-panel" },
     { "path": "./apps/user-interface" }
   ]

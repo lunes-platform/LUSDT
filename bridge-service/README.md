@@ -89,6 +89,11 @@ LUSDT_CONTRACT_ADDRESS=5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
 DATABASE_URL=postgresql://user:pass@localhost:5432/bridge_db
 REDIS_URL=redis://localhost:6379
 
+# Fee Distribution Wallets (Solana) — 80/15/5
+DEV_SOLANA_WALLET=your_dev_wallet_pubkey
+INSURANCE_SOLANA_WALLET=your_insurance_wallet_pubkey
+STAKING_REWARDS_SOLANA_WALLET=your_staking_pool_pubkey
+
 # Segurança
 RATE_LIMIT_PER_HOUR=100
 MAX_TRANSACTION_VALUE=100000
@@ -101,21 +106,37 @@ ALERT_EMAIL=admin@lunes.io
 
 ## 🔄 Fluxos de Operação
 
-### Depósito (USDT → LUSDT)
+### Depósito / Mint (USDT → LUSDT) — Dual-Fee v3
 
 1. **Usuário deposita USDT** no treasury Solana
-2. **Bridge Service detecta** a transação
-3. **Validação** do endereço Lunes no memo
-4. **Mint LUSDT** na conta de destino
-5. **Confirmação** e notificação
+2. **Bridge Service detecta** a transação e valida endereço Lunes no memo
+3. **Dedução de taxa ANTES do mint** (preserva backing ratio 1:1):
+   - Calcula stablecoin fee (0.30-0.60% USDT)
+   - Distribui USDT: **80% dev / 15% insurance / 5% staking rewards**
+4. **Mint LUSDT** (amount - fee) na conta de destino via Lunes chain
+5. **On-chain**: LUSDT.mint() cobra 0.10% LUNES burn fee → BurnEngine
+6. **Confirmação** e notificação
 
-### Saque (LUSDT → USDT)
+### Saque / Burn (LUSDT → USDT) — Dual-Fee v3
 
 1. **Usuário chama burn()** no contrato LUSDT
-2. **Evento RedemptionRequested** é emitido
-3. **Bridge Service processa** o evento
-4. **Transferência USDT** para endereço Solana
-5. **Confirmação** e atualização de status
+2. **On-chain**: Tax Manager cobra dual-fee:
+   - 0.30-0.60% LUSDT (stablecoin fee) → distribui 80/15/5 on-chain
+   - 0.10% LUNES (burn fee) → BurnEngine
+3. **Evento RedemptionRequested** é emitido com amount queimado
+4. **Bridge Service processa** o evento
+5. **Transferência USDT** (amount integral) para endereço Solana
+6. **Confirmação** e atualização de status
+
+### Distribuição de Taxas (80/15/5)
+
+```
+Stablecoin Fee (receita)
+├── 80% → Dev wallet (DEV_SOLANA_WALLET)
+├── 15% → Insurance fund (INSURANCE_SOLANA_WALLET)
+└──  5% → Staking rewards pool (STAKING_REWARDS_SOLANA_WALLET)
+         → Distribuição mensal para stakers com ≥100k LUNES
+```
 
 ## 📊 Monitoramento
 

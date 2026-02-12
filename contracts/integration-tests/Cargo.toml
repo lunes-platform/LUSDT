@@ -1,0 +1,14 @@
+[package]
+name = "integration-tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ink = { version = "4.2.1", default-features = false }
+
+[dev-dependencies]
+ink = { version = "4.2.1", default-features = false }
+
+[features]
+default = ["std"]
+std = ["ink/std"]

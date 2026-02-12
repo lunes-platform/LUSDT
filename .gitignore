@@ -1,7 +1,6 @@
 # Rust / Cargo
 target/
 **/target/
-Cargo.lock
 
 # Node.js
 node_modules/
@@ -17,6 +16,11 @@ yarn-error.log*
 # IDEs
 .vscode/
 .idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Environment variables
 .env
@@ -29,21 +33,5 @@ yarn-error.log*
 *.pem
 
 # Logs
-*.log 
-
-logs
-dev-debug.log
-# Dependency directories
-# Editor directories and files
-.idea
-.vscode
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
-# OS specific
-
-# Task files
-# tasks.json
-# tasks/ 
+*.log
+logs/

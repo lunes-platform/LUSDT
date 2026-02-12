@@ -1,0 +1,66 @@
+{
+  "network": "testnet",
+  "environment": "testing",
+  "rpc_endpoint": "wss://rococo-contracts-rpc.polkadot.io",
+  "contracts": {
+    "tax_manager": {
+      "constructor_params": {
+        "lunes_token_address": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+        "lusdt_token_address": "TBD_AFTER_DEPLOYMENT",
+        "distribution_wallets": {
+          "dev": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY",
+          "dao": "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty",
+          "backing_fund": "5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y",
+          "rewards_fund": "5DAAnrj7VHTznn2AWBemMuyBwZWs6FNFjdyVXUeYum3PTXFy",
+          "burn_address": "5HGjWAeFDfFCWPsjFQdVV2Msvz2XtMktvgocEZcCj68kUMaw"
+        },
+        "initial_lunes_price": 500000
+      }
+    },
+    "lusdt_token": {
+      "constructor_params": {
+        "tax_manager": "TBD_AFTER_TAX_MANAGER_DEPLOYMENT",
+        "bridge_account": "5GNJqTPyNqANBkUVMN1LPPrxXnFouWXoe2wNSmmEoLctxiZY",
+        "emergency_admin": "5FHneW46xGXgs5mUiveU4sbTyGBzmstUspZC92UhjJM694ty"
+      }
+    }
+  },
+  "test_accounts": {
+    "deployer": "//Alice",
+    "bridge": "//Bob", 
+    "emergency_admin": "//Charlie",
+    "user1": "//Dave",
+    "user2": "//Eve"
+  },
+  "test_scenarios": [
+    {
+      "name": "basic_mint_burn",
+      "description": "Test basic mint and burn operations",
+      "steps": [
+        "mint_tokens",
+        "verify_balance",
+        "burn_tokens",
+        "verify_redemption"
+      ]
+    },
+    {
+      "name": "fee_distribution",
+      "description": "Test fee calculation and distribution",
+      "steps": [
+        "mint_with_fees",
+        "verify_fee_distribution",
+        "check_volume_tracking"
+      ]
+    },
+    {
+      "name": "emergency_procedures",
+      "description": "Test emergency pause and unpause",
+      "steps": [
+        "emergency_pause",
+        "verify_operations_blocked",
+        "emergency_unpause",
+        "verify_operations_resume"
+      ]
+    }
+  ]
+}

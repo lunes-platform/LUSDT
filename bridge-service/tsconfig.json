@@ -35,6 +35,9 @@
     "node_modules",
     "dist",
     "**/*.test.ts",
-    "**/*.spec.ts"
+    "**/*.spec.ts",
+    "src/security/**/*",
+    "src/monitoring/parity-monitor.ts",
+    "src/simple-bridge.ts"
   ]
-} 
+}
