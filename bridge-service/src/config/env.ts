@@ -48,10 +48,21 @@ export const config = {
   DATABASE_URL: process.env.DATABASE_URL || 'postgresql://user:pass@localhost:5432/bridge_db',
   REDIS_URL: process.env.REDIS_URL || 'redis://localhost:6379',
 
+  // Bridge Authentication
+  BRIDGE_API_KEY: process.env.BRIDGE_API_KEY || '',
+  BRIDGE_API_SECRET: process.env.BRIDGE_API_SECRET || '',
+
   // Security
   RATE_LIMIT_PER_HOUR: parseInt(process.env.RATE_LIMIT_PER_HOUR || '100'),
   MAX_TRANSACTION_VALUE: parseFloat(process.env.MAX_TRANSACTION_VALUE || '100000'),
   TREASURY_MIN_BALANCE: parseFloat(process.env.TREASURY_MIN_BALANCE || '50000'),
+
+  // Hot Wallet Spending Limits (USDT, human-readable units)
+  HOT_WALLET_SINGLE_TX_LIMIT: parseFloat(process.env.HOT_WALLET_SINGLE_TX_LIMIT || '10000'),
+  HOT_WALLET_DAILY_LIMIT: parseFloat(process.env.HOT_WALLET_DAILY_LIMIT || '50000'),
+
+  // Multisig Enforcement — when true, outbound USDT transfers require vault verification
+  REQUIRE_MULTISIG_VAULT: process.env.REQUIRE_MULTISIG_VAULT === 'true',
 
   // Monitoring
   DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '',
@@ -76,7 +87,10 @@ export function validateConfig(): void {
     requiredEnvVars.push(
       'SOLANA_WALLET_PRIVATE_KEY',
       'LUNES_WALLET_SEED',
-      'LUSDT_CONTRACT_ADDRESS'
+      'LUSDT_CONTRACT_ADDRESS',
+      'BRIDGE_API_KEY',
+      'BRIDGE_API_SECRET',
+      'SOLANA_MULTISIG_VAULT'
     );
   }
 

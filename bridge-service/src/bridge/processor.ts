@@ -4,6 +4,8 @@ import { Database, TransactionRecord } from './database';
 import { BridgeMonitoring } from '../monitoring/metrics';
 import { logger } from '../utils/logger';
 import { config } from '../config/env';
+import { PublicKey } from '@solana/web3.js';
+import { decodeAddress, encodeAddress } from '@polkadot/keyring';
 
 export class BridgeProcessor {
   private isRunning: boolean = false;
@@ -367,13 +369,9 @@ export class BridgeProcessor {
 
   private validateSolanaAddress(address: string): boolean {
     try {
-      // Validação básica de endereço Solana (32 bytes em base58)
-      if (!address || address.length < 32 || address.length > 44) {
-        return false;
-      }
-      
-      // Aqui você pode adicionar validações mais sofisticadas
-      return true;
+      if (!address) return false;
+      const pubkey = new PublicKey(address);
+      return PublicKey.isOnCurve(pubkey.toBytes());
     } catch {
       return false;
     }
@@ -381,13 +379,10 @@ export class BridgeProcessor {
 
   private validateLunesAddress(address: string): boolean {
     try {
-      // Validação básica de endereço Substrate/Polkadot
-      if (!address || address.length < 47 || address.length > 48) {
-        return false;
-      }
-      
-      // Aqui você pode adicionar validações mais sofisticadas
-      return true;
+      if (!address) return false;
+      const decoded = decodeAddress(address);
+      const reencoded = encodeAddress(decoded);
+      return reencoded.length > 0;
     } catch {
       return false;
     }
