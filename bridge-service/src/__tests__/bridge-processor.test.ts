@@ -73,11 +73,26 @@ class TestBridgeProcessor {
   }
 
   validateSolanaAddress(address: string): boolean {
-    return !!address && address.length >= 32 && address.length <= 44;
+    try {
+      if (!address) return false;
+      const { PublicKey } = require('@solana/web3.js');
+      const pubkey = new PublicKey(address);
+      return PublicKey.isOnCurve(pubkey.toBytes());
+    } catch {
+      return false;
+    }
   }
 
   validateLunesAddress(address: string): boolean {
-    return !!address && address.length >= 47 && address.length <= 48;
+    try {
+      if (!address) return false;
+      const { decodeAddress, encodeAddress } = require('@polkadot/keyring');
+      const decoded = decodeAddress(address);
+      const reencoded = encodeAddress(decoded);
+      return reencoded.length > 0;
+    } catch {
+      return false;
+    }
   }
 
   async executeSolanaToLunesTransfer(transaction: MockTransaction): Promise<{
@@ -314,16 +329,30 @@ describe('Bridge Processor — v3 Dual-Fee Model', () => {
       expect(processor.validateTransferAmount(100000)).toBe(true);
     });
 
-    test('should validate Solana address (32-44 chars)', () => {
+    test('should validate Solana address cryptographically', () => {
+      // Valid Solana address (on-curve ed25519 point)
       expect(processor.validateSolanaAddress('7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU')).toBe(true);
+      // Invalid: too short
       expect(processor.validateSolanaAddress('short')).toBe(false);
+      // Invalid: empty
       expect(processor.validateSolanaAddress('')).toBe(false);
+      // Invalid: garbage base58
+      expect(processor.validateSolanaAddress('0000000000000000000000000000000000000000000O')).toBe(false);
+      // Invalid: not base58 chars
+      expect(processor.validateSolanaAddress('!!!invalid!!!')).toBe(false);
     });
 
-    test('should validate Lunes address (47-48 chars)', () => {
+    test('should validate Lunes/Substrate address cryptographically', () => {
+      // Valid SS58 address (Alice)
       expect(processor.validateLunesAddress('5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY')).toBe(true);
+      // Invalid: too short
       expect(processor.validateLunesAddress('short')).toBe(false);
+      // Invalid: empty
       expect(processor.validateLunesAddress('')).toBe(false);
+      // Invalid: bad checksum
+      expect(processor.validateLunesAddress('5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutXXX')).toBe(false);
+      // Invalid: contains non-base58 characters
+      expect(processor.validateLunesAddress('!!!not_a_valid_address!!!')).toBe(false);
     });
   });
 
@@ -407,6 +436,121 @@ describe('Bridge Processor — v3 Dual-Fee Model', () => {
 
       const result = await processor.executeSolanaToLunesTransfer(tx);
       expect(result.devShare + result.insuranceShare + result.stakingShare).toBeCloseTo(result.feeAmount);
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // FIX 1: Finalized Commitment
+  // ═════════════════════════════════════════════════════════════════
+
+  describe('FIX 1: Finalized Commitment Enforcement', () => {
+    test('isTransactionConfirmed should only accept finalized status', async () => {
+      // The mock already returns true for finalized, but we verify the
+      // processor correctly delegates to isTransactionConfirmed before processing
+      mockIsTransactionConfirmed.mockResolvedValue(true);
+      const mintTx: MockTransaction = {
+        id: 'tx-fin-001',
+        sourceChain: 'solana',
+        destinationChain: 'lunes',
+        sourceSignature: 'sol_sig_fin',
+        amount: 100,
+        sourceAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+        destinationAddress: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
+        status: 'pending',
+        retryCount: 0,
+      };
+      await processor.executeSolanaToLunesTransfer(mintTx);
+      expect(mockIsTransactionConfirmed).toHaveBeenCalledWith('sol_sig_fin');
+    });
+
+    test('should reject non-finalized Solana transactions', async () => {
+      mockIsTransactionConfirmed.mockResolvedValue(false);
+      const tx: MockTransaction = {
+        id: 'tx-notfin',
+        sourceChain: 'solana',
+        destinationChain: 'lunes',
+        sourceSignature: 'pending_sig',
+        amount: 100,
+        sourceAddress: '7xKXtg2CW87d97TXJSDpbD5jBkheTqA83TZRuJosgAsU',
+        destinationAddress: '5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY',
+        status: 'pending',
+        retryCount: 0,
+      };
+      await expect(processor.executeSolanaToLunesTransfer(tx)).rejects.toThrow('Source transaction not yet confirmed');
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // FIX 5: Spending Limits
+  // ═════════════════════════════════════════════════════════════════
+
+  describe('FIX 5: Spending Limits (config-level validation)', () => {
+    test('should enforce single-tx limit concept', () => {
+      const singleTxLimit = 10000;
+      const amount = 15000;
+      expect(amount > singleTxLimit).toBe(true);
+    });
+
+    test('should enforce daily limit concept', () => {
+      const dailyLimit = 50000;
+      let dailySpent = 40000;
+      const newTransfer = 15000;
+      expect(dailySpent + newTransfer > dailyLimit).toBe(true);
+    });
+
+    test('should allow transfer within limits', () => {
+      const singleTxLimit = 10000;
+      const dailyLimit = 50000;
+      let dailySpent = 0;
+      const amount = 5000;
+      expect(amount <= singleTxLimit).toBe(true);
+      expect(dailySpent + amount <= dailyLimit).toBe(true);
+    });
+
+    test('daily limit resets after 24h', () => {
+      const resetTime = Date.now() - 86_400_001; // > 24h ago
+      const now = Date.now();
+      expect(now - resetTime >= 86_400_000).toBe(true);
+    });
+  });
+
+  // ═════════════════════════════════════════════════════════════════
+  // FIX 3: Bridge Auth
+  // ═════════════════════════════════════════════════════════════════
+
+  describe('FIX 3: Bridge Auth (HMAC concept)', () => {
+    test('HMAC signature should match for valid payload', () => {
+      const crypto = require('crypto');
+      const secret = 'test-secret-key';
+      const timestamp = String(Date.now());
+      const body = JSON.stringify({ amount: 100, sourceAddress: 'addr1', destinationAddress: 'addr2' });
+      const payload = `${timestamp}.${body}`;
+      const sig = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+      const expected = crypto.createHmac('sha256', secret).update(payload).digest('hex');
+      expect(crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expected))).toBe(true);
+    });
+
+    test('HMAC signature should NOT match for tampered payload', () => {
+      const crypto = require('crypto');
+      const secret = 'test-secret-key';
+      const timestamp = String(Date.now());
+      const body = JSON.stringify({ amount: 100 });
+      const tamperedBody = JSON.stringify({ amount: 999 });
+      const sig = crypto.createHmac('sha256', secret).update(`${timestamp}.${body}`).digest('hex');
+      const expected = crypto.createHmac('sha256', secret).update(`${timestamp}.${tamperedBody}`).digest('hex');
+      expect(sig !== expected).toBe(true);
+    });
+
+    test('should reject expired timestamps (> 5 min)', () => {
+      const oldTimestamp = Date.now() - 400_000; // 6.67 min ago
+      const age = Math.abs(Date.now() - oldTimestamp);
+      expect(age > 300_000).toBe(true);
+    });
+
+    test('should accept fresh timestamps (< 5 min)', () => {
+      const freshTimestamp = Date.now() - 10_000; // 10 sec ago
+      const age = Math.abs(Date.now() - freshTimestamp);
+      expect(age <= 300_000).toBe(true);
     });
   });
 

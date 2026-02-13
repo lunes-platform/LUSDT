@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import cors from 'cors';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
+import crypto from 'crypto';
 
 import { SolanaClient } from './solana/client';
 import { LunesClient } from './lunes/client';
@@ -157,6 +158,47 @@ class BridgeService {
     }
 
     next();
+  }
+
+  private requireBridgeAuth(req: express.Request, res: express.Response, next: express.NextFunction): void {
+    if (config.NODE_ENV !== 'production' && config.NODE_ENV !== 'staging') {
+      next();
+      return;
+    }
+
+    // Option 1: HMAC signature (preferred for server-to-server)
+    const signature = req.header('x-bridge-signature');
+    const timestamp = req.header('x-bridge-timestamp');
+    if (signature && timestamp && config.BRIDGE_API_SECRET) {
+      const age = Math.abs(Date.now() - parseInt(timestamp, 10));
+      if (age > 300_000) {
+        res.status(401).json({ error: 'Request timestamp expired (>5 min)' });
+        return;
+      }
+      const payload = `${timestamp}.${JSON.stringify(req.body)}`;
+      const expected = crypto.createHmac('sha256', config.BRIDGE_API_SECRET).update(payload).digest('hex');
+      if (crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expected))) {
+        next();
+        return;
+      }
+      res.status(401).json({ error: 'Invalid HMAC signature' });
+      return;
+    }
+
+    // Option 2: Static API key (simpler, for trusted frontends)
+    const apiKey = req.header('x-bridge-api-key');
+    if (apiKey && config.BRIDGE_API_KEY && crypto.timingSafeEqual(Buffer.from(apiKey), Buffer.from(config.BRIDGE_API_KEY))) {
+      next();
+      return;
+    }
+
+    // Option 3: Fall back to Basic Auth (ops credentials)
+    const authHeader = req.header('authorization') || '';
+    if (authHeader.toLowerCase().startsWith('basic ')) {
+      return this.requireOpsAuth(req, res, next);
+    }
+
+    res.status(401).json({ error: 'Bridge authentication required. Provide X-Bridge-API-Key, X-Bridge-Signature, or Basic Auth.' });
   }
 
   private setupRoutes(): void {
@@ -485,7 +527,7 @@ class BridgeService {
     });
 
     // Criar transação Solana -> Lunes (persistir no DB e deixar BridgeProcessor processar)
-    this.app.post('/bridge/solana-to-lunes', async (req, res) => {
+    this.app.post('/bridge/solana-to-lunes', this.requireBridgeAuth.bind(this), async (req, res) => {
       try {
         if (!this.database) {
           res.status(503).json({ error: 'Database not initialized', startupErrors: this.startupErrors });
@@ -535,7 +577,7 @@ class BridgeService {
     });
 
     // Criar transação Lunes -> Solana (persistir no DB e deixar BridgeProcessor processar)
-    this.app.post('/bridge/lunes-to-solana', async (req, res) => {
+    this.app.post('/bridge/lunes-to-solana', this.requireBridgeAuth.bind(this), async (req, res) => {
       try {
         if (!this.database) {
           res.status(503).json({ error: 'Database not initialized', startupErrors: this.startupErrors });

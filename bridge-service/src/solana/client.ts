@@ -16,9 +16,11 @@ export class SolanaClient {
   private keypair: Keypair;
   private usdtMint: PublicKey;
   private multisigVault?: PublicKey;
+  private dailySpent: number = 0;
+  private dailyResetTime: number = Date.now();
 
   constructor(rpcUrl: string, privateKey: string) {
-    this.connection = new Connection(rpcUrl, 'confirmed');
+    this.connection = new Connection(rpcUrl, 'finalized');
 
     // Suporta ambos os formatos: JSON array [1,2,3,...] e Base58 string
     const trimmedKey = privateKey.trim();
@@ -90,9 +92,54 @@ export class SolanaClient {
     }
   }
 
+  private resetDailyLimitIfNeeded(): void {
+    const now = Date.now();
+    if (now - this.dailyResetTime >= 86_400_000) {
+      this.dailySpent = 0;
+      this.dailyResetTime = now;
+      logger.info('🔄 Daily spending limit reset');
+    }
+  }
+
   async transferUSDT(recipient: string, amount: number): Promise<string> {
     try {
       logger.info('💸 Initiating USDT transfer', { recipient, amount });
+
+      // === SPENDING LIMITS (FIX 5) ===
+      if (amount > config.HOT_WALLET_SINGLE_TX_LIMIT) {
+        throw new Error(
+          `Transfer amount $${amount} exceeds single-tx limit $${config.HOT_WALLET_SINGLE_TX_LIMIT}. Use multisig for large transfers.`
+        );
+      }
+
+      this.resetDailyLimitIfNeeded();
+      if (this.dailySpent + amount > config.HOT_WALLET_DAILY_LIMIT) {
+        throw new Error(
+          `Transfer would exceed daily limit ($${this.dailySpent + amount} > $${config.HOT_WALLET_DAILY_LIMIT}). Retry tomorrow or use multisig.`
+        );
+      }
+
+      // === MULTISIG VAULT ENFORCEMENT (FIX 4) ===
+      if (config.REQUIRE_MULTISIG_VAULT) {
+        if (!this.multisigVault) {
+          throw new Error('REQUIRE_MULTISIG_VAULT is true but SOLANA_MULTISIG_VAULT address not configured');
+        }
+        const vaultBalance = await this.getUSDTBalance(this.multisigVault.toString());
+        if (vaultBalance < amount) {
+          throw new Error(
+            `Multisig vault balance ($${vaultBalance}) insufficient for transfer ($${amount}). Replenish vault first.`
+          );
+        }
+        logger.info('🏦 Multisig vault balance verified', { vaultBalance, transferAmount: amount });
+      }
+
+      // === TREASURY MINIMUM BALANCE CHECK ===
+      const currentBalance = await this.getUSDTBalance();
+      if (currentBalance - amount < config.TREASURY_MIN_BALANCE) {
+        throw new Error(
+          `Transfer would drop treasury below minimum ($${currentBalance} - $${amount} < $${config.TREASURY_MIN_BALANCE})`
+        );
+      }
 
       const recipientPubkey = new PublicKey(recipient);
       const sourceTokenAccount = await Token.getAssociatedTokenAddress(
@@ -123,10 +170,11 @@ export class SolanaClient {
         this.connection,
         transaction,
         [this.keypair],
-        { commitment: 'confirmed' }
+        { commitment: 'finalized' }
       );
 
-      logger.info('✅ USDT transfer completed', { signature, recipient, amount });
+      this.dailySpent += amount;
+      logger.info('✅ USDT transfer completed', { signature, recipient, amount, dailySpent: this.dailySpent });
       return signature;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -153,7 +201,7 @@ export class SolanaClient {
         const signatures = await this.connection.getSignaturesForAddress(
           ourTokenAccount,
           { limit: 10, before: undefined, until: lastSignature },
-          'confirmed'
+          'finalized'
         );
 
         if (signatures.length === 0) return;
@@ -164,7 +212,7 @@ export class SolanaClient {
         for (const sig of signatures.reverse()) {
           try {
             const tx = await this.connection.getParsedTransaction(sig.signature, {
-              commitment: 'confirmed',
+              commitment: 'finalized',
               maxSupportedTransactionVersion: 0
             });
 
@@ -223,7 +271,7 @@ export class SolanaClient {
     };
 
     // Initialize lastSignature with current latest
-    const initial = await this.connection.getSignaturesForAddress(ourTokenAccount, { limit: 1 }, 'confirmed');
+    const initial = await this.connection.getSignaturesForAddress(ourTokenAccount, { limit: 1 }, 'finalized');
     if (initial.length > 0) {
       lastSignature = initial[0].signature;
       logger.info('📍 USDT watcher initialized', { lastSignature });
@@ -236,7 +284,7 @@ export class SolanaClient {
   async getTransactionDetails(signature: string): Promise<any> {
     try {
       const transaction = await this.connection.getTransaction(signature, {
-        commitment: 'confirmed',
+        commitment: 'finalized',
         maxSupportedTransactionVersion: 0
       });
       return transaction;
@@ -275,8 +323,7 @@ export class SolanaClient {
   async isTransactionConfirmed(signature: string): Promise<boolean> {
     try {
       const status = await this.connection.getSignatureStatus(signature);
-      return status.value?.confirmationStatus === 'confirmed' ||
-        status.value?.confirmationStatus === 'finalized';
+      return status.value?.confirmationStatus === 'finalized';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error('Error checking transaction confirmation', { signature, error: message });
