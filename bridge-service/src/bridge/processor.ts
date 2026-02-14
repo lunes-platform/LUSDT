@@ -6,18 +6,29 @@ import { logger } from '../utils/logger';
 import { config } from '../config/env';
 import { PublicKey } from '@solana/web3.js';
 import { decodeAddress, encodeAddress } from '@polkadot/keyring';
+import { VaultExecutor } from '../multisig/vault-executor';
 
 export class BridgeProcessor {
   private isRunning: boolean = false;
   private processingInterval: NodeJS.Timeout | null = null;
   private processingSemaphore: Set<string> = new Set();
 
+  private vaultExecutor?: VaultExecutor;
+
   constructor(
     private solanaClient: SolanaClient,
     private lunesClient: LunesClient,
     private database: Database,
-    private monitoring: BridgeMonitoring
-  ) {}
+    private monitoring: BridgeMonitoring,
+    vaultExecutor?: VaultExecutor,
+  ) {
+    this.vaultExecutor = vaultExecutor;
+    if (vaultExecutor) {
+      logger.info('🏦 BridgeProcessor using VaultExecutor (multisig mode)');
+    } else {
+      logger.warn('⚠️  BridgeProcessor using direct SolanaClient (single-signer mode)');
+    }
+  }
 
   async start(): Promise<void> {
     if (this.isRunning) {
@@ -338,11 +349,29 @@ export class BridgeProcessor {
         throw new Error('Source transaction not yet finalized');
       }
 
-      // Transfere USDT na Solana
-      const solanaSignature = await this.solanaClient.transferUSDT(
-        transaction.destinationAddress,
-        transaction.amount
-      );
+      // Transfere USDT na Solana — via multisig se VaultExecutor disponível
+      let solanaSignature: string;
+
+      if (this.vaultExecutor) {
+        logger.info('🏦 Routing through VaultExecutor (multisig approval)', {
+          transactionId: transaction.id,
+        });
+        solanaSignature = await this.vaultExecutor.requestTransfer(
+          transaction.id,
+          transaction.destinationAddress,
+          transaction.amount,
+          {
+            sourceChain: 'lunes',
+            sourceSignature: transaction.sourceSignature,
+            bridgeTransactionId: transaction.id,
+          },
+        );
+      } else {
+        solanaSignature = await this.solanaClient.transferUSDT(
+          transaction.destinationAddress,
+          transaction.amount
+        );
+      }
 
       return solanaSignature;
     } catch (error) {
