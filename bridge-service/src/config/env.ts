@@ -39,9 +39,11 @@ export const config = {
   HSM_TYPE: process.env.HSM_TYPE || 'development',
   AWS_KMS_KEY_ID: process.env.AWS_KMS_KEY_ID,
   AWS_REGION: process.env.AWS_REGION || 'us-east-1',
+  SOLANA_ENCRYPTED_KEY: process.env.SOLANA_ENCRYPTED_KEY || '', // KMS envelope-encrypted ed25519 key (base64)
   VAULT_URL: process.env.VAULT_URL,
   VAULT_TOKEN: process.env.VAULT_TOKEN,
   VAULT_KEY_PATH: process.env.VAULT_KEY_PATH,
+  VAULT_KEY_NAME: process.env.VAULT_KEY_NAME || 'solana-bridge',
   BACKUP_HSM_TYPE: process.env.BACKUP_HSM_TYPE,
 
   // Database
