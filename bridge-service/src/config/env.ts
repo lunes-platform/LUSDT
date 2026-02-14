@@ -64,6 +64,18 @@ export const config = {
   // Multisig Enforcement — when true, outbound USDT transfers require vault verification
   REQUIRE_MULTISIG_VAULT: process.env.REQUIRE_MULTISIG_VAULT === 'true',
 
+  // Multisig Bot Secrets (HMAC keys for each bot — use HSM/KMS in production)
+  BOT_ORIGIN_SECRET: process.env.BOT_ORIGIN_SECRET || '',
+  BOT_RISK_SECRET: process.env.BOT_RISK_SECRET || '',
+  BOT_BACKUP_SECRET: process.env.BOT_BACKUP_SECRET || '',
+
+  // Multisig Policy
+  MULTISIG_REQUIRED_APPROVALS: parseInt(process.env.MULTISIG_REQUIRED_APPROVALS || '2'),
+  MULTISIG_TOTAL_BOTS: parseInt(process.env.MULTISIG_TOTAL_BOTS || '3'),
+  MULTISIG_HIGH_VALUE_THRESHOLD: parseFloat(process.env.MULTISIG_HIGH_VALUE_THRESHOLD || '5000'),
+  MULTISIG_TIMELOCK_MS: parseInt(process.env.MULTISIG_TIMELOCK_MS || '600000'),
+  MULTISIG_PROPOSAL_TTL_MS: parseInt(process.env.MULTISIG_PROPOSAL_TTL_MS || '300000'),
+
   // Monitoring
   DISCORD_WEBHOOK_URL: process.env.DISCORD_WEBHOOK_URL || '',
   ALERT_EMAIL: process.env.ALERT_EMAIL || '',
