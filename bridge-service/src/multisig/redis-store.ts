@@ -12,7 +12,7 @@
  */
 
 import Redis from 'ioredis';
-import { MultisigProposal, CircuitBreakerStatus, CircuitState, AuditEntry } from './types';
+import { MultisigProposal, CircuitBreakerStatus, AuditEntry } from './types';
 import { logger } from '../utils/logger';
 
 const KEY_PREFIX = 'lusdt:multisig:';

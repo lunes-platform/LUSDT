@@ -1,0 +1,57 @@
+# Bridge Service - VPS Production Example
+NODE_ENV=production
+PORT=3001
+
+# RPCs
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
+LUNES_RPC_URL=wss://ws.lunes.io
+
+# Bridge auth
+BRIDGE_API_KEY=change_me_api_key
+BRIDGE_API_SECRET=change_me_hmac_secret
+OPS_BASIC_AUTH_USER=ops
+OPS_BASIC_AUTH_PASS=change_me_ops_password
+
+# Wallet / contracts
+SOLANA_MULTISIG_VAULT=replace_with_squads_or_vault_address
+USDT_TOKEN_MINT=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+LUNES_WALLET_SEED=replace_with_secure_seed
+LUSDT_CONTRACT_ADDRESS=replace_with_contract
+TAX_MANAGER_CONTRACT_ADDRESS=replace_with_tax_manager
+
+# Fee wallets
+DEV_SOLANA_WALLET=replace_dev_wallet
+INSURANCE_SOLANA_WALLET=replace_insurance_wallet
+STAKING_REWARDS_SOLANA_WALLET=replace_staking_wallet
+
+# DB / cache
+DATABASE_URL=postgresql://bridge_user:strong_password@127.0.0.1:5432/bridge_db
+REDIS_URL=redis://127.0.0.1:6379
+
+# HSM - Vault (recommended for self-hosted VPS)
+HSM_TYPE=hashicorp_vault
+VAULT_URL=http://127.0.0.1:8200
+VAULT_TOKEN=replace_with_bridge_policy_token
+VAULT_KEY_PATH=transit
+VAULT_KEY_NAME=solana-bridge
+
+# Multisig policy
+REQUIRE_MULTISIG_VAULT=true
+BOT_ORIGIN_SECRET=replace_origin_secret
+BOT_RISK_SECRET=replace_risk_secret
+BOT_BACKUP_SECRET=replace_backup_secret
+MULTISIG_REQUIRED_APPROVALS=2
+MULTISIG_TOTAL_BOTS=3
+MULTISIG_HIGH_VALUE_THRESHOLD=5000
+MULTISIG_TIMELOCK_MS=600000
+MULTISIG_PROPOSAL_TTL_MS=300000
+
+# Limits
+HOT_WALLET_SINGLE_TX_LIMIT=10000
+HOT_WALLET_DAILY_LIMIT=50000
+TREASURY_MIN_BALANCE=50000
+MAX_TRANSACTION_VALUE=100000
+
+# Alerts
+DISCORD_WEBHOOK_URL=
+ALERT_EMAIL=ops@yourdomain.com

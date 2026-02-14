@@ -11,7 +11,7 @@
  * Este executor abstrai o fluxo para que a transição seja transparente.
  */
 
-import { Connection, PublicKey, Transaction, sendAndConfirmTransaction } from '@solana/web3.js';
+import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { Token, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import { ProposalManager } from './proposal-manager';
 import { CircuitBreaker } from './circuit-breaker';
@@ -256,16 +256,22 @@ export class VaultExecutor {
     );
 
     const transaction = new Transaction().add(instruction);
+    transaction.recentBlockhash = (
+      await this.connection.getLatestBlockhash('finalized')
+    ).blockhash;
+    transaction.feePayer = signerPubkey;
 
     // Sign via signer abstraction (KMS/Vault in production)
-    const signedTx = await this.signer.signTransaction(transaction);
+    const signedTx = await this.signer.signTransaction(transaction) as Transaction;
 
-    const signature = await sendAndConfirmTransaction(
-      this.connection,
-      signedTx as Transaction,
-      [], // Already signed by signer
-      { commitment: 'finalized' },
-    );
+    // Send pre-signed transaction (no additional signers needed)
+    const rawTx = signedTx.serialize();
+    const signature = await this.connection.sendRawTransaction(rawTx, {
+      skipPreflight: false,
+      preflightCommitment: 'finalized',
+    });
+
+    await this.connection.confirmTransaction(signature, 'finalized');
 
     return signature;
   }

@@ -1,0 +1,18 @@
+[Unit]
+Description=LUSDT Bridge Service
+After=network.target docker.service
+Wants=docker.service
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/lusdt/bridge-service
+EnvironmentFile=/opt/lusdt/bridge-service/.env
+ExecStart=/usr/bin/node /opt/lusdt/bridge-service/bridge-service/dist/index.js
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/log/lusdt-bridge.log
+StandardError=append:/var/log/lusdt-bridge-error.log
+
+[Install]
+WantedBy=multi-user.target
