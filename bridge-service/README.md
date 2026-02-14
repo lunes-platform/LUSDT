@@ -7,6 +7,8 @@ Bridge cross-chain entre **LUSDT** (Lunes) e **USDT** (Solana) com multisig vaul
 - [Arquitetura](#arquitetura)
 - [Pre-requisitos](#pre-requisitos)
 - [Build e Instalacao](#build-e-instalacao)
+- [Deploy Contratos Lunes (ink!)](#deploy-contratos-lunes-ink)
+- [Deploy Solana (Treasury Multisig)](#deploy-solana-treasury-multisig)
 - [Configuracao](#configuracao)
 - [Estrutura do Projeto](#estrutura-do-projeto)
 - [Sistema Multisig](#sistema-multisig)
@@ -151,6 +153,234 @@ pnpm dev
 
 # Producao
 pnpm start
+```
+
+## Deploy Contratos Lunes (ink!)
+
+Antes de configurar o bridge-service, os smart contracts devem estar deployados na Lunes Chain.
+
+### Ordem de deploy
+
+```text
+1. BurnEngine       (sem dependencias)
+2. Tax Manager      (precisa do endereco do BurnEngine)
+3. LUSDT Token      (precisa do endereco do Tax Manager)
+4. Configuracao     (conectar contratos entre si)
+```
+
+### Deploy local (automatizado)
+
+```bash
+# Iniciar no Lunes local
+docker start node-lunes    # ws://localhost:9944
+
+# Opcao A: via cargo-contract (shell)
+../contracts/scripts/deploy_local.sh
+
+# Opcao B: via polkadot-js (Node.js)
+node ../contracts/scripts/deploy_polkadotjs.mjs
+```
+
+Ambos os scripts fazem:
+1. Upload e instantiate do Tax Manager
+2. Upload e instantiate do LUSDT Token (com endereco do Tax Manager)
+3. Salvam enderecos em `contracts/deployments/`
+
+### Deploy manual (passo a passo)
+
+```bash
+# Pre-requisitos
+cargo-contract --version   # 3.2.0
+rustc +1.85.0 --version    # 1.85.0
+
+# === 1. BurnEngine ===
+cd ../contracts/burn_engine
+RUSTUP_TOOLCHAIN=1.85.0 cargo contract build --release
+RUSTUP_TOOLCHAIN=1.85.0 cargo contract instantiate \
+  --constructor new \
+  --suri //Alice \
+  --url ws://localhost:9944 \
+  --skip-dry-run --skip-confirm -x \
+  --gas 100000000000 --proof-size 500000
+# Anotar: BURN_ENGINE_ADDRESS=<endereco>
+
+# === 2. Tax Manager ===
+cd ../tax_manager
+RUSTUP_TOOLCHAIN=1.85.0 cargo contract build --release
+RUSTUP_TOOLCHAIN=1.85.0 cargo contract instantiate \
+  --constructor new \
+  --args \
+    "<LUNES_TOKEN_ADDRESS>" \
+    "<LUSDT_TOKEN_PLACEHOLDER>" \
+    '{"dev_solana":"<DEV_WALLET>","dev_lunes":"<DEV_LUNES>","insurance_fund":"<INSURANCE>"}' \
+    500000 \
+  --suri //Alice \
+  --url ws://localhost:9944 \
+  --skip-dry-run --skip-confirm -x \
+  --gas 100000000000 --proof-size 500000
+# Anotar: TAX_MANAGER_ADDRESS=<endereco>
+
+# === 3. LUSDT Token ===
+cd ../lusdt_token
+RUSTUP_TOOLCHAIN=1.85.0 cargo contract build --release
+RUSTUP_TOOLCHAIN=1.85.0 cargo contract instantiate \
+  --constructor new \
+  --args \
+    "<TAX_MANAGER_ADDRESS>" \
+    "<BRIDGE_ACCOUNT>" \
+    "<EMERGENCY_ADMIN>" \
+  --suri //Alice \
+  --url ws://localhost:9944 \
+  --skip-dry-run --skip-confirm -x \
+  --gas 100000000000 --proof-size 500000
+# Anotar: LUSDT_TOKEN_ADDRESS=<endereco>
+```
+
+### Configuracao pos-deploy (Lunes)
+
+```bash
+# Atualizar Tax Manager com endereco real do LUSDT Token
+cargo contract call \
+  --contract <TAX_MANAGER_ADDRESS> \
+  --message update_lusdt_token_address \
+  --args "<LUSDT_TOKEN_ADDRESS>" \
+  --suri //Alice --url ws://localhost:9944
+
+# Configurar BurnEngine (OBRIGATORIO para dual-fee)
+cargo contract call \
+  --contract <TAX_MANAGER_ADDRESS> \
+  --message set_burn_engine \
+  --args "<BURN_ENGINE_ADDRESS>" \
+  --suri //Alice --url ws://localhost:9944
+
+# Configurar LUNES burn fee (10 = 0.10%)
+cargo contract call \
+  --contract <TAX_MANAGER_ADDRESS> \
+  --message set_lunes_burn_fee_bps \
+  --args 10 \
+  --suri //Alice --url ws://localhost:9944
+```
+
+### Copiar ABI para o bridge-service
+
+```bash
+mkdir -p src/contracts
+cp ../target/ink/tax_manager/tax_manager.json src/contracts/
+```
+
+### Deploy em mainnet Lunes
+
+```bash
+# Via script (le seed do .env)
+../contracts/scripts/deploy_lusdt.sh
+
+# Via polkadot-js (Node.js)
+node scripts/deploy_lusdt.js
+```
+
+> **Nota:** Em producao, use wallet dedicada com saldo em LUNES. A seed e lida de `LUNES_WALLET_SEED`.
+
+### Verificacao
+
+```bash
+# Teste E2E cross-contract (mint + burn + volume tracking)
+NODE_PATH=node_modules node ../contracts/scripts/e2e_test_crosscontract.js
+
+# Queries manuais
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message total_supply --suri //Alice --url ws://localhost:9944 --dry-run
+
+cargo contract call --contract <TAX_MANAGER_ADDRESS> \
+  --message get_current_fee_bps --suri //Alice --url ws://localhost:9944 --dry-run
+```
+
+> **Gas/proofSize:** Use `proofSize >= 5_000_000` para queries via polkadot-js.
+> Valores baixos causam `OutOfGas` silencioso.
+
+Documentacao completa: [`contracts/DEPLOYMENT_RUNBOOK.md`](../contracts/DEPLOYMENT_RUNBOOK.md) e [`contracts/CROSS_CONTRACT_DEPLOY.md`](../contracts/CROSS_CONTRACT_DEPLOY.md)
+
+## Deploy Solana (Treasury Multisig)
+
+O lado Solana requer um **cofre multisig** (3-de-5) que guarda o USDT colateral.
+
+### Pre-requisitos
+
+```bash
+# Instalar Solana CLI
+sh -c "$(curl -sSfL https://release.anza.xyz/stable/install)"
+
+# Instalar SPL Token CLI
+cargo install spl-token-cli
+
+# Verificar
+solana --version
+spl-token --version
+```
+
+### Deploy automatizado
+
+```bash
+# Script completo (gera chaves + cria multisig + cria treasury)
+../scripts/setup-solana-multisig.sh
+
+# Para testes locais (inicia validator + cria tudo)
+../scripts/setup-local-test.sh
+```
+
+### Deploy manual (passo a passo)
+
+```bash
+# 1. Configurar rede
+solana config set --url devnet          # testes
+# solana config set --url mainnet-beta  # producao
+
+# 2. Gerar chaves dos guardioes (5 chaves)
+mkdir -p solana-keys
+for i in 1 2 3 4 5; do
+  solana-keygen new --no-passphrase \
+    --outfile solana-keys/guardian_${i}_keypair.json
+done
+
+# 3. Financiar o pagador
+solana airdrop 2 solana-keys/guardian_1_keypair.json  # devnet
+
+# 4. Criar autoridade multisig 3-de-5
+GUARDIAN_1=$(solana-keygen pubkey solana-keys/guardian_1_keypair.json)
+GUARDIAN_2=$(solana-keygen pubkey solana-keys/guardian_2_keypair.json)
+GUARDIAN_3=$(solana-keygen pubkey solana-keys/guardian_3_keypair.json)
+GUARDIAN_4=$(solana-keygen pubkey solana-keys/guardian_4_keypair.json)
+GUARDIAN_5=$(solana-keygen pubkey solana-keys/guardian_5_keypair.json)
+
+spl-token create-multisig 3 \
+  $GUARDIAN_1 $GUARDIAN_2 $GUARDIAN_3 $GUARDIAN_4 $GUARDIAN_5 \
+  --fee-payer solana-keys/guardian_1_keypair.json
+# Anotar: MULTISIG_AUTHORITY=<endereco>
+
+# 5. Criar conta de token do tesouro (controlada pelo multisig)
+# USDT Devnet:  Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr
+# USDT Mainnet: EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+USDT_MINT="EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+
+spl-token create-account $USDT_MINT \
+  --owner <MULTISIG_AUTHORITY> \
+  --fee-payer solana-keys/guardian_1_keypair.json
+# Anotar: TREASURY_TOKEN_ACCOUNT=<endereco>
+
+# 6. Verificar
+spl-token balance --address <TREASURY_TOKEN_ACCOUNT>
+spl-token account-info --address <TREASURY_TOKEN_ACCOUNT>
+```
+
+> **PRODUCAO:** Gere chaves em dispositivos isolados (hardware wallets). **NUNCA** commit chaves no git.
+
+### Enderecos para o .env
+
+Apos o deploy, configure no `.env` do bridge-service:
+
+```bash
+USDT_TOKEN_MINT=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+TREASURY_ACCOUNT_ADDRESS=<endereco_treasury>
+SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
 ```
 
 ## Configuracao
