@@ -6,6 +6,11 @@ export default defineConfig({
   define: {
     global: 'globalThis',
   },
+  server: {
+    host: "0.0.0.0",
+    port: 3003,
+    allowedHosts:["lusdt.lunes.io"],
+  },
   resolve: {
     alias: {
       '@': '/src',
