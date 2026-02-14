@@ -6,6 +6,7 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import crypto from 'crypto';
 
+import { PublicKey } from '@solana/web3.js';
 import { SolanaClient } from './solana/client';
 import { LunesClient } from './lunes/client';
 import { BridgeProcessor } from './bridge/processor';
@@ -643,14 +644,15 @@ class BridgeService {
     // === USDT FEE COLLECTOR ADMIN ENDPOINTS ===
     
     // Initialize fee collector with wallet addresses / Inicializar coletor com endereços
-    this.app.post('/admin/fee-collector/initialize', this.requireOpsAuth.bind(this), async (req, res) => {
+    this.app.post('/admin/fee-collector/initialize', this.requireOpsAuth.bind(this), async (req, res): Promise<void> => {
       try {
         const { devSolanaAddress, insuranceFundAddress } = req.body;
 
         if (!devSolanaAddress || !insuranceFundAddress) {
-          return res.status(400).json({
+          res.status(400).json({
             error: 'Missing required fields: devSolanaAddress, insuranceFundAddress'
           });
+          return;
         }
 
         // Validate Solana addresses / Validar endereços Solana
@@ -658,9 +660,10 @@ class BridgeService {
           new PublicKey(devSolanaAddress);
           new PublicKey(insuranceFundAddress);
         } catch {
-          return res.status(400).json({
+          res.status(400).json({
             error: 'Invalid Solana address format'
           });
+          return;
         }
 
         // Initialize fee collector / Inicializar coletor
@@ -689,13 +692,14 @@ class BridgeService {
     });
 
     // Get fee collector status and stats / Obter status e estatísticas
-    this.app.get('/admin/fee-collector/stats', this.requireOpsAuth.bind(this), async (req, res) => {
+    this.app.get('/admin/fee-collector/stats', this.requireOpsAuth.bind(this), async (req, res): Promise<void> => {
       try {
         if (!this.feeCollector) {
-          return res.status(503).json({
+          res.status(503).json({
             error: 'Fee collector not initialized',
             status: 'not_configured'
           });
+          return;
         }
 
         const stats = this.feeCollector.getStats();
@@ -713,29 +717,32 @@ class BridgeService {
     });
 
     // Update dev wallet (configurable via admin) / Atualizar carteira dev
-    this.app.post('/admin/fee-collector/update-dev-wallet', this.requireOpsAuth.bind(this), async (req, res) => {
+    this.app.post('/admin/fee-collector/update-dev-wallet', this.requireOpsAuth.bind(this), async (req, res): Promise<void> => {
       try {
         const { newAddress } = req.body;
 
         if (!newAddress) {
-          return res.status(400).json({
+          res.status(400).json({
             error: 'Missing required field: newAddress'
           });
+          return;
         }
 
         if (!this.feeCollector) {
-          return res.status(503).json({
+          res.status(503).json({
             error: 'Fee collector not initialized'
           });
+          return;
         }
 
         // Validate address / Validar endereço
         try {
           new PublicKey(newAddress);
         } catch {
-          return res.status(400).json({
+          res.status(400).json({
             error: 'Invalid Solana address format'
           });
+          return;
         }
 
         this.feeCollector.updateDevWallet(newAddress);
@@ -759,12 +766,13 @@ class BridgeService {
     });
 
     // Get insurance wallet (read-only) / Obter carteira de seguro (somente leitura)
-    this.app.get('/admin/fee-collector/insurance-wallet', this.requireOpsAuth.bind(this), async (req, res) => {
+    this.app.get('/admin/fee-collector/insurance-wallet', this.requireOpsAuth.bind(this), async (req, res): Promise<void> => {
       try {
         if (!this.feeCollector) {
-          return res.status(503).json({
+          res.status(503).json({
             error: 'Fee collector not initialized'
           });
+          return;
         }
 
         res.json({
@@ -779,12 +787,13 @@ class BridgeService {
     });
 
     // Pause fee collection / Pausar coleta de taxas
-    this.app.post('/admin/fee-collector/pause', this.requireOpsAuth.bind(this), async (req, res) => {
+    this.app.post('/admin/fee-collector/pause', this.requireOpsAuth.bind(this), async (req, res): Promise<void> => {
       try {
         if (!this.feeCollector) {
-          return res.status(503).json({
+          res.status(503).json({
             error: 'Fee collector not initialized'
           });
+          return;
         }
 
         this.feeCollector.pause();
@@ -804,12 +813,13 @@ class BridgeService {
     });
 
     // Resume fee collection / Retomar coleta de taxas
-    this.app.post('/admin/fee-collector/resume', this.requireOpsAuth.bind(this), async (req, res) => {
+    this.app.post('/admin/fee-collector/resume', this.requireOpsAuth.bind(this), async (req, res): Promise<void> => {
       try {
         if (!this.feeCollector) {
-          return res.status(503).json({
+          res.status(503).json({
             error: 'Fee collector not initialized'
           });
+          return;
         }
 
         this.feeCollector.resume();

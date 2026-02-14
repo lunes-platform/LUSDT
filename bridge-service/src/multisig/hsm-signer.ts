@@ -13,9 +13,10 @@
  */
 
 import { Keypair, Transaction } from '@solana/web3.js';
-import { KMSClient, DecryptCommand, EncryptCommand, GetPublicKeyCommand } from '@aws-sdk/client-kms';
+import { KMSClient, DecryptCommand, EncryptCommand } from '@aws-sdk/client-kms';
 import crypto from 'crypto';
 import bs58 from 'bs58';
+import nacl from 'tweetnacl';
 import { ISigner, SignerConfig } from './types';
 import { logger } from '../utils/logger';
 
@@ -39,15 +40,7 @@ export class LocalSigner implements ISigner {
   }
 
   async sign(message: Uint8Array): Promise<Uint8Array> {
-    // ed25519 sign using Node crypto (Node 18+)
-    const privateKeyObj = crypto.createPrivateKey({
-      key: Buffer.from(this.keypair.secretKey.slice(0, 32)),
-      format: 'der',
-      type: 'pkcs8',
-    });
-    // Fallback: direct nacl-style sign via keypair secretKey
-    const { sign } = await import('tweetnacl');
-    return sign.detached(message, this.keypair.secretKey);
+    return nacl.sign.detached(message, this.keypair.secretKey);
   }
 
   async signTransaction(transaction: Transaction): Promise<Transaction> {
@@ -125,8 +118,7 @@ export class AwsKmsSigner implements ISigner {
 
   async sign(message: Uint8Array): Promise<Uint8Array> {
     await this.ensureInitialized();
-    const { sign } = await import('tweetnacl');
-    return sign.detached(message, this.keypair!.secretKey);
+    return nacl.sign.detached(message, this.keypair!.secretKey);
   }
 
   async signTransaction(transaction: Transaction): Promise<Transaction> {
@@ -266,7 +258,12 @@ export function createSigner(cfg: SignerConfig): ISigner {
       if (!cfg.vaultUrl || !cfg.vaultToken || !cfg.vaultKeyPath) {
         throw new Error('VaultSigner requires vaultUrl, vaultToken, vaultKeyPath');
       }
-      return new VaultSigner(cfg.vaultUrl, cfg.vaultToken, cfg.vaultKeyPath);
+      return new VaultSigner(
+        cfg.vaultUrl,
+        cfg.vaultToken,
+        cfg.vaultKeyPath,
+        process.env.VAULT_KEY_NAME || 'solana-bridge',
+      );
 
     default:
       throw new Error(`Unknown signer type: ${cfg.type}`);

@@ -155,13 +155,18 @@ export class UsdtFeeCollector {
     logger.info('👂 Starting to listen for UsdtBridgeFeeMarked events');
 
     try {
-      // Subscribe to contract events / Assinar eventos do contrato
-      await this.taxManagerContract.query
-        .subscribeToEvents((event: any) => {
-          this.handleFeeEvent(event).catch((error) => {
-            logger.error('❌ Error handling fee event', { error });
-          });
+      // Subscribe to contract events via system events
+      const api = (this.taxManagerContract as any).api;
+      await api.query.system.events((events: any[]) => {
+        events.forEach((record: any) => {
+          const { event } = record;
+          if (event && event.section === 'contracts' && event.method === 'ContractEmitted') {
+            this.handleFeeEvent(event).catch((error: any) => {
+              logger.error('❌ Error handling fee event', { error });
+            });
+          }
         });
+      });
 
       logger.info('✅ Successfully subscribed to TaxManager events');
     } catch (error) {
