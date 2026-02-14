@@ -1,325 +1,617 @@
-# 🌉 LUSDT Bridge Service
+# LUSDT Bridge Service
 
-Sistema de bridge cross-chain entre LUSDT (Lunes) e USDT (Solana) com arquitetura robusta e segura.
+Bridge cross-chain entre **LUSDT** (Lunes) e **USDT** (Solana) com multisig vault, circuit breaker e bots de aprovacao.
 
-## 🚀 Características
+## Indice
 
-- **Cross-Chain Bridge**: Conversão bidirecional LUSDT ↔ USDT
-- **Segurança Avançada**: Multisig treasury, rate limiting, monitoramento
-- **Monitoramento Real-Time**: Dashboards, alertas, métricas
-- **Arquitetura Escalável**: Microserviços, Docker, load balancing
-- **Auditoria Completa**: Logs detalhados, rastreamento de transações
+- [Arquitetura](#arquitetura)
+- [Pre-requisitos](#pre-requisitos)
+- [Build e Instalacao](#build-e-instalacao)
+- [Configuracao](#configuracao)
+- [Estrutura do Projeto](#estrutura-do-projeto)
+- [Sistema Multisig](#sistema-multisig)
+- [Fluxos de Operacao](#fluxos-de-operacao)
+- [Testes](#testes)
+- [Deploy Local (Docker)](#deploy-local-docker)
+- [Deploy VPS (Producao)](#deploy-vps-producao)
+- [Endpoints da API](#endpoints-da-api)
+- [Monitoramento](#monitoramento)
+- [Troubleshooting](#troubleshooting)
+- [Contribuicao](#contribuicao)
 
-## 🏗️ Arquitetura
+## Arquitetura
 
 ```text
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Usuário       │    │  Bridge Service │    │   Smart         │
-│   (Solana)      │───▶│   (Off-chain)   │───▶│   Contract      │
-│                 │    │                 │    │   (Lunes)       │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                        │                        │
-         ▼                        ▼                        ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   USDT Token    │    │   Treasury      │    │   LUSDT Token   │
-│   (SPL Token)   │    │   Management    │    │   (ink! PSP22)  │
-│   EPjFWdd5Au... │    │   (Multisig)    │    │   Lunes Chain   │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+                          LUSDT Bridge Service
+                          ====================
+
+  Solana                       Off-chain                         Lunes
+ --------                     -----------                       ------
+
+ Deposito USDT ───────▶  BridgeProcessor  ──────────▶  LUSDT.mint()
+ (SPL Transfer)         │                │             (ink! PSP22)
+                        │  VaultExecutor │
+ Recebe USDT   ◀───────│  (multisig)    │◀──────────  LUSDT.burn()
+ (SPL Transfer)         │                │             (RedemptionRequested)
+                        └───────┬────────┘
+                                │
+               ┌────────────────┼────────────────┐
+               ▼                ▼                ▼
+        OriginValidator   RiskValidator   BackupValidator
+        (Bot 1)           (Bot 2)         (Bot 3)
+               │                │                │
+               └───────── Quorum 2/3 ────────────┘
+                                │
+                         ┌──────┴──────┐
+                         │ HSM Signer  │
+                         │ (KMS/Vault) │
+                         └──────┬──────┘
+                                ▼
+                    Solana Transaction (finalized)
 ```
 
-## 📋 Pré-requisitos
+**Componentes principais:**
 
-- **Node.js** 18+
-- **Docker** & **Docker Compose**
-- **PostgreSQL** 15+
-- **Redis** 7+
-- **Carteira Solana** com USDT
-- **Carteira Lunes** com acesso ao contrato LUSDT
+- **BridgeProcessor** — detecta eventos nas duas chains e coordena transferencias
+- **VaultExecutor** — orquestra o fluxo multisig: proposta, bots, execucao
+- **Approval Bots (3x)** — validam independentemente cada transferencia
+- **HSM Signer** — chaves protegidas via AWS KMS ou HashiCorp Vault
+- **Circuit Breaker** — pausa automatica se falhas consecutivas ocorrem
+- **Redis Store** — persiste propostas, spending counters, audit log
 
-## 🛠️ Instalação
+## Pre-requisitos
 
-### 1. Clone o repositório
+| Ferramenta | Versao minima | Notas |
+|---|---|---|
+| **Node.js** | 18.x | LTS recomendado |
+| **pnpm** | 9.x | Gerenciador de pacotes do monorepo |
+| **TypeScript** | 5.2+ | Instalado como devDependency |
+| **Docker** | 24+ | Para ambiente local e producao |
+| **Docker Compose** | 2.20+ | Plugin do Docker |
+| **PostgreSQL** | 15+ | Banco de dados principal |
+| **Redis** | 7+ | Cache e persistencia multisig |
+
+**Opcional (producao):**
+
+- **HashiCorp Vault** 1.15+ — gerenciamento de chaves ed25519
+- **AWS KMS** — envelope encryption para chaves Solana
+
+## Build e Instalacao
+
+### 1. Clone o repositorio
+
 ```bash
-git clone https://github.com/lunes-platform/lusdt-bridge.git
-cd lusdt-bridge/bridge-service
+git clone https://github.com/lunes-platform/LUSDT.git
+cd LUSDT
 ```
 
-### 2. Instale dependências
+### 2. Instale dependencias
+
+O projeto usa **pnpm workspaces**. Na raiz do monorepo:
+
 ```bash
-npm install
+pnpm install
 ```
 
-### 3. Configure variáveis de ambiente
+Ou, se quiser instalar somente o bridge-service:
+
 ```bash
-cp .env.example .env
-# Edite .env com suas configurações
+cd bridge-service
+pnpm install
 ```
 
-### 4. Inicie os serviços
-```bash
-# Desenvolvimento
-docker-compose up -d postgres redis
-npm run dev
+### 3. Compile o TypeScript
 
-# Produção
-docker-compose up -d
+```bash
+cd bridge-service
+pnpm build
 ```
 
-## ⚙️ Configuração
+Esse comando executa `tsc` e gera os arquivos JavaScript em `dist/`.
 
-### Variáveis de Ambiente
+**Configuracao do compilador** (`tsconfig.json`):
+
+- **target**: ES2022
+- **module**: commonjs
+- **strict**: true (todas as checagens habilitadas)
+- **outDir**: `./dist`
+- **rootDir**: `./src`
+
+### 4. Verifique o build
 
 ```bash
-# Servidor
-PORT=3000
-NODE_ENV=development
-LOG_LEVEL=info
+# Deve sair sem erros
+pnpm build
 
-# Solana
+# Verifique que dist/ foi gerado
+ls dist/
+```
+
+Se houver erros de compilacao, verifique:
+
+- `pnpm install` foi executado (dependencias presentes)
+- Node.js >= 18 esta no PATH
+- O arquivo `src/contracts/tax_manager.json` existe (copiado do build do contrato ink!)
+
+### 5. Configure o ambiente
+
+```bash
+# Copie o template de ambiente
+cp env-vps.example .env
+
+# Edite com suas configuracoes
+nano .env
+```
+
+### 6. Execute
+
+```bash
+# Desenvolvimento (hot-reload)
+pnpm dev
+
+# Producao
+pnpm start
+```
+
+## Configuracao
+
+### Variaveis de Ambiente Essenciais
+
+```bash
+# ── Servidor ───────────────────────────────
+NODE_ENV=production          # development | staging | production
+PORT=3001
+
+# ── Blockchains ────────────────────────────
 SOLANA_RPC_URL=https://api.mainnet-beta.solana.com
-SOLANA_WALLET_PRIVATE_KEY=your_base58_private_key
+LUNES_RPC_URL=wss://ws.lunes.io
 USDT_TOKEN_MINT=EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v
+LUSDT_CONTRACT_ADDRESS=<endereco_contrato_lusdt>
+TAX_MANAGER_CONTRACT_ADDRESS=<endereco_tax_manager>
 
-# Lunes
-LUNES_RPC_URL=wss://rpc.lunes.io
-LUNES_WALLET_SEED=your_mnemonic_phrase
-LUSDT_CONTRACT_ADDRESS=5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
-
-# Banco de Dados
-DATABASE_URL=postgresql://user:pass@localhost:5432/bridge_db
+# ── Banco de Dados / Cache ─────────────────
+DATABASE_URL=postgresql://bridge_user:senha@localhost:5432/bridge_db
 REDIS_URL=redis://localhost:6379
 
-# Fee Distribution Wallets (Solana) — 80/15/5
-DEV_SOLANA_WALLET=your_dev_wallet_pubkey
-INSURANCE_SOLANA_WALLET=your_insurance_wallet_pubkey
-STAKING_REWARDS_SOLANA_WALLET=your_staking_pool_pubkey
+# ── Carteiras de Taxa (Solana) ─────────────
+DEV_SOLANA_WALLET=<pubkey>
+INSURANCE_SOLANA_WALLET=<pubkey>
+STAKING_REWARDS_SOLANA_WALLET=<pubkey>
 
-# Segurança
-RATE_LIMIT_PER_HOUR=100
+# ── HSM / Signer ──────────────────────────
+# Opcao A: HashiCorp Vault (recomendado VPS)
+HSM_TYPE=hashicorp_vault
+VAULT_URL=http://127.0.0.1:8200
+VAULT_TOKEN=<token_com_policy_bridge-signer>
+VAULT_KEY_PATH=transit
+VAULT_KEY_NAME=solana-bridge
+
+# Opcao B: AWS KMS (envelope encryption)
+# HSM_TYPE=aws_kms
+# AWS_KMS_KEY_ID=<kms-key-id>
+# SOLANA_ENCRYPTED_KEY=<base64_encrypted_keypair>
+
+# Opcao C: Local (SOMENTE para dev)
+# HSM_TYPE=local
+# SOLANA_WALLET_PRIVATE_KEY=<base58_key>
+
+# ── Multisig Vault ─────────────────────────
+REQUIRE_MULTISIG_VAULT=true
+BOT_ORIGIN_SECRET=<secret_hmac_bot_1>
+BOT_RISK_SECRET=<secret_hmac_bot_2>
+BOT_BACKUP_SECRET=<secret_hmac_bot_3>
+MULTISIG_REQUIRED_APPROVALS=2
+MULTISIG_TOTAL_BOTS=3
+MULTISIG_HIGH_VALUE_THRESHOLD=5000
+MULTISIG_TIMELOCK_MS=600000
+MULTISIG_PROPOSAL_TTL_MS=300000
+
+# ── Limites ────────────────────────────────
+HOT_WALLET_SINGLE_TX_LIMIT=10000
+HOT_WALLET_DAILY_LIMIT=50000
 MAX_TRANSACTION_VALUE=100000
 TREASURY_MIN_BALANCE=50000
 
-# Monitoramento
+# ── Alertas (opcional) ─────────────────────
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-ALERT_EMAIL=admin@lunes.io
+ALERT_EMAIL=ops@seudominio.com
 ```
 
-## 🔄 Fluxos de Operação
+Referencia completa: [`env-vps.example`](env-vps.example)
 
-### Depósito / Mint (USDT → LUSDT) — Dual-Fee v3
+## Estrutura do Projeto
 
-1. **Usuário deposita USDT** no treasury Solana
-2. **Bridge Service detecta** a transação e valida endereço Lunes no memo
-3. **Dedução de taxa ANTES do mint** (preserva backing ratio 1:1):
+```
+bridge-service/
+├── src/
+│   ├── index.ts                 # Entrypoint — Express server, rotas, lifecycle
+│   ├── config/
+│   │   └── env.ts               # Carregamento e validacao de env vars
+│   ├── bridge/
+│   │   ├── processor.ts         # BridgeProcessor — fluxo principal Solana<->Lunes
+│   │   ├── database.ts          # PostgreSQL — persistencia de transacoes
+│   │   └── usdt-fee-collector.ts # Coleta de taxas USDT (legacy/fallback)
+│   ├── solana/
+│   │   └── client.ts            # SolanaClient — conexao RPC, SPL transfers
+│   ├── lunes/
+│   │   └── client.ts            # LunesClient — Polkadot API, ink! contracts
+│   ├── multisig/                # *** Sistema Multisig Vault ***
+│   │   ├── types.ts             # Tipos: Proposal, Bot, CircuitBreaker, Signer
+│   │   ├── hsm-signer.ts        # Signers: Local, AWS KMS, HashiCorp Vault
+│   │   ├── circuit-breaker.ts   # Circuit breaker (closed/open/half_open)
+│   │   ├── proposal-manager.ts  # Lifecycle de propostas, spending limits
+│   │   ├── approval-bots.ts     # 3 bots: Origin, Risk, Backup validators
+│   │   ├── vault-executor.ts    # Orquestrador do fluxo multisig
+│   │   ├── squads-client.ts     # Squads Protocol SDK (multisig on-chain)
+│   │   ├── redis-store.ts       # Persistencia Redis (propostas, counters)
+│   │   └── index.ts             # Re-exports
+│   ├── admin/
+│   │   └── adminRoutes.ts       # Rotas admin protegidas
+│   ├── monitoring/
+│   │   └── metrics.ts           # Prometheus metrics
+│   ├── contracts/
+│   │   └── tax_manager.json     # ABI do contrato TaxManager (ink!)
+│   ├── utils/
+│   │   ├── logger.ts            # Winston logger
+│   │   └── helpers.ts           # Utilitarios
+│   ├── db/
+│   │   └── schema.sql           # Schema PostgreSQL
+│   └── __tests__/
+│       ├── multisig.test.ts     # 38 testes multisig
+│       └── bridge.test.ts       # 34 testes bridge
+├── dist/                        # Output compilado (gerado por `pnpm build`)
+├── package.json
+├── tsconfig.json
+├── Dockerfile                   # Multi-stage build (builder + production)
+├── docker-compose.yml           # Stack completa local (Postgres, Redis, etc)
+├── env-vps.example              # Template de .env para producao
+└── logs/                        # Logs da aplicacao
+```
+
+## Sistema Multisig
+
+### Visao Geral
+
+O bridge **nao executa transferencias diretamente**. Cada transferencia Lunes->Solana passa pelo sistema multisig:
+
+1. **BridgeProcessor** detecta evento de burn na Lunes chain
+2. **VaultExecutor** cria uma **proposta** no ProposalManager
+3. **3 bots** avaliam a proposta em paralelo
+4. Se **quorum** (2/3 normal, 3/3 para high-value) atingido -> executa
+5. Se **rejeitado** -> bloqueia, loga, circuit breaker reage
+
+### Bots de Aprovacao
+
+| Bot | Funcao | Validacoes |
+|-----|--------|------------|
+| **OriginValidator** | Valida origem da transacao | Tx fonte finalizada, amount match, recipient valido |
+| **RiskValidator** | Analisa risco e limites | Velocidade de propostas, volume por destinatario, solvencia do vault |
+| **BackupValidator** | Contingencia e integridade | Saude do servico, DB acessivel, cross-ref com banco, freshness |
+
+### Politica de Consenso
+
+```
+Transferencia normal (< $5K):
+  Quorum: 2 de 3 bots
+  Execucao: imediata apos quorum
+
+Transferencia high-value (>= $5K):
+  Quorum: 3 de 3 bots
+  Timelock: 10 minutos antes de executar
+```
+
+### Limites de Gasto
+
+| Limite | Valor Padrao | Configuravel via |
+|--------|-------------|-----------------|
+| **Por transacao** | $10,000 | `HOT_WALLET_SINGLE_TX_LIMIT` |
+| **Por hora** | $25,000 | Codigo (SpendingPolicy) |
+| **Por dia** | $50,000 | `HOT_WALLET_DAILY_LIMIT` |
+
+### Circuit Breaker
+
+```
+closed ────(5 falhas em 10min)────▶ open
+  ▲                                     │
+  │                                 (5min timeout)
+  │                                     │
+  └──(sucesso)── half_open ◀────────────┘
+                     │
+                (falha)──────────────▶ open
+```
+
+- **closed**: operacao normal
+- **open**: todas as propostas bloqueadas
+- **half_open**: permite 2 tentativas de recovery
+- **forceReset**: operadores podem resetar manualmente via admin
+
+### HSM / KMS Signers
+
+Chaves privadas **nunca ficam em variaveis de ambiente** em producao:
+
+| Modo | Uso | Como funciona |
+|------|-----|---------------|
+| **Local** | Dev/teste | Chave base58 em env (inseguro) |
+| **AWS KMS** | Cloud | Envelope encryption — keypair ed25519 criptografado pelo KMS |
+| **HashiCorp Vault** | VPS | Transit engine com key_type=ed25519, chave nunca sai do Vault |
+
+## Fluxos de Operacao
+
+### Deposito / Mint (USDT -> LUSDT) — Dual-Fee v3
+
+1. Usuario deposita USDT no treasury Solana
+2. Bridge detecta a transacao e valida endereco Lunes no memo
+3. Deducao de taxa ANTES do mint (preserva backing ratio 1:1):
    - Calcula stablecoin fee (0.30-0.60% USDT)
-   - Distribui USDT: **80% dev / 15% insurance / 5% staking rewards**
-4. **Mint LUSDT** (amount - fee) na conta de destino via Lunes chain
-5. **On-chain**: LUSDT.mint() cobra 0.10% LUNES burn fee → BurnEngine
-6. **Confirmação** e notificação
+   - Distribui USDT: **80% dev / 15% insurance / 5% staking**
+4. Mint LUSDT (amount - fee) via Lunes chain
+5. On-chain: LUSDT.mint() cobra 0.10% LUNES burn fee
+6. Confirmacao e notificacao
 
-### Saque / Burn (LUSDT → USDT) — Dual-Fee v3
+### Saque / Burn (LUSDT -> USDT) — Dual-Fee v3
 
-1. **Usuário chama burn()** no contrato LUSDT
-2. **On-chain**: Tax Manager cobra dual-fee:
-   - 0.30-0.60% LUSDT (stablecoin fee) → distribui 80/15/5 on-chain
-   - 0.10% LUNES (burn fee) → BurnEngine
-3. **Evento RedemptionRequested** é emitido com amount queimado
-4. **Bridge Service processa** o evento
-5. **Transferência USDT** (amount integral) para endereço Solana
-6. **Confirmação** e atualização de status
+1. Usuario chama `burn()` no contrato LUSDT
+2. On-chain: Tax Manager cobra dual-fee:
+   - 0.30-0.60% LUSDT (stablecoin fee) -> distribui 80/15/5
+   - 0.10% LUNES (burn fee) -> BurnEngine
+3. Evento `RedemptionRequested` emitido
+4. Bridge processa o evento
+5. **VaultExecutor** executa transferencia USDT via multisig
+6. Confirmacao e atualizacao de status
 
-### Distribuição de Taxas (80/15/5)
+### Distribuicao de Taxas
 
 ```
-Stablecoin Fee (receita)
-├── 80% → Dev wallet (DEV_SOLANA_WALLET)
-├── 15% → Insurance fund (INSURANCE_SOLANA_WALLET)
-└──  5% → Staking rewards pool (STAKING_REWARDS_SOLANA_WALLET)
-         → Distribuição mensal para stakers com ≥100k LUNES
+Stablecoin Fee
+├── 80% -> Dev wallet
+├── 15% -> Insurance fund
+└──  5% -> Staking rewards pool
 ```
 
-## 📊 Monitoramento
-
-### Endpoints de API
+## Testes
 
 ```bash
-# Health check
-GET /health
+cd bridge-service
 
-# Métricas
-GET /metrics
+# Rodar todos os testes (72 testes)
+pnpm test
 
-# Status da transação
-GET /transactions/{signature}
+# Modo watch (re-executa ao salvar)
+pnpm test:watch
 
-# Estatísticas
-GET /stats
+# Com cobertura de codigo
+pnpm test:coverage
 ```
 
-### Dashboards
+**Suites de teste:**
 
-- **Grafana**: http://localhost:3001 (admin/admin123)
-- **Prometheus**: http://localhost:9090
-- **Bridge Service**: http://localhost:3000
+| Suite | Testes | Cobre |
+|-------|--------|-------|
+| `multisig.test.ts` | 38 | CircuitBreaker, ProposalManager, 3 Bots, integracao |
+| `bridge.test.ts` | 34 | BridgeProcessor, SolanaClient, LunesClient |
 
-### Alertas
+## Deploy Local (Docker)
 
-- **Discord**: Notificações em tempo real
-- **Email**: Alertas críticos
-- **Logs**: Auditoria completa
-
-## 🔐 Segurança
-
-### Controles Implementados
-
-- ✅ **Rate Limiting**: 100 req/hora por IP
-- ✅ **Validação de Entrada**: Todos os inputs validados
-- ✅ **Treasury Multisig**: 3-of-5 assinaturas
-- ✅ **Monitoramento Paridade**: Alerta se desbalanceado
-- ✅ **Logs Auditáveis**: Todas as operações registradas
-- ✅ **Timeouts**: Prevenção de transações travadas
-
-### Limites de Segurança
-
-```typescript
-const securityLimits = {
-  maxTransactionValue: 100000,  // 100k USDT
-  maxDailyVolume: 1000000,      // 1M USDT
-  treasuryMinBalance: 50000,    // 50k USDT
-  parityDeviation: 0.01,        // 1%
-  processingTimeout: 30000      // 30 segundos
-};
-```
-
-## 🧪 Testes
+### Stack completa
 
 ```bash
-# Testes unitários
-npm test
+cd bridge-service
 
-# Testes com cobertura
-npm run test:coverage
+# Subir tudo: bridge + postgres + redis + prometheus + grafana + nginx
+docker-compose up -d
 
-# Testes de integração
-npm run test:integration
+# Verificar status
+docker-compose ps
 
-# Testes E2E
-npm run test:e2e
+# Ver logs
+docker-compose logs -f bridge-service
 ```
 
-## 📈 Performance
-
-### Métricas Esperadas
-
-- **Latência**: < 2 segundos
-- **Throughput**: 1000 tx/hora
-- **Uptime**: 99.9%
-- **Precisão**: 100% (paridade treasury)
-
-### Otimizações
-
-- **Connection Pooling**: PostgreSQL
-- **Caching**: Redis para dados frequentes
-- **Batch Processing**: Múltiplas transações
-- **Load Balancing**: Nginx reverse proxy
-
-## 🚀 Deploy
-
-### Staging
+### Somente dependencias (para desenvolvimento)
 
 ```bash
-# Build da imagem
-docker build -t lusdt-bridge:staging .
+# Subir apenas postgres e redis
+docker-compose up -d postgres redis
 
-# Deploy
-docker-compose -f docker-compose.staging.yml up -d
+# Rodar bridge em modo dev (hot-reload)
+pnpm dev
 ```
 
-### Produção
+### Build da imagem Docker
 
 ```bash
-# Build da imagem
+# Build multi-stage (builder + production)
 docker build -t lusdt-bridge:latest .
 
-# Deploy com secrets
-docker-compose -f docker-compose.prod.yml up -d
+# Executar standalone
+docker run -p 3000:3000 --env-file .env lusdt-bridge:latest
 ```
 
-## 📝 Logs
+A imagem usa:
 
-### Estrutura de Logs
+- **Alpine Linux** (tamanho minimo)
+- **Usuario nao-root** (seguranca)
+- **dumb-init** (PID 1 correto)
+- **Healthcheck** integrado (`/health`)
+
+## Deploy VPS (Producao)
+
+Guia completo em [`Docs/VPS_DEPLOYMENT_BRIDGE.md`](../Docs/VPS_DEPLOYMENT_BRIDGE.md).
+
+### Resumo rapido
+
+```bash
+# 1. Bootstrap da VPS (instala Docker, Redis, Vault)
+chmod +x scripts/setup-vps-bridge.sh
+sudo scripts/setup-vps-bridge.sh
+
+# 2. Inicializar Vault Transit (cria chave ed25519)
+chmod +x scripts/init-vault-transit.sh
+scripts/init-vault-transit.sh
+# Guarde: Unseal Keys, Root Token, Bridge Token
+
+# 3. Configurar ambiente
+cp bridge-service/env-vps.example /opt/lusdt/bridge-service/.env
+nano /opt/lusdt/bridge-service/.env
+# Preencha: VAULT_TOKEN, BOT secrets, DB, RPCs, wallets
+
+# 4. Build e deploy
+cd /opt/lusdt/bridge-service
+pnpm install --frozen-lockfile
+pnpm build
+
+# 5. Instalar como servico systemd
+sudo cp scripts/lusdt-bridge.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable lusdt-bridge
+sudo systemctl start lusdt-bridge
+
+# 6. Verificar
+sudo systemctl status lusdt-bridge
+curl http://localhost:3001/health
+```
+
+### Arquivos de deploy
+
+| Arquivo | Funcao |
+|---------|--------|
+| `scripts/setup-vps-bridge.sh` | Bootstrap: Docker, Redis, Vault |
+| `scripts/init-vault-transit.sh` | Inicializa Vault, cria chave ed25519 |
+| `scripts/lusdt-bridge.service` | Unidade systemd |
+| `env-vps.example` | Template de producao |
+| `Docs/VPS_DEPLOYMENT_BRIDGE.md` | Runbook completo |
+
+## Endpoints da API
+
+### Publicos
+
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| GET | `/health` | Health check |
+| GET | `/metrics` | Metricas Prometheus |
+| GET | `/transactions/:signature` | Status de uma transacao |
+| GET | `/stats` | Estatisticas gerais |
+
+### Admin (protegidos por Basic Auth)
+
+| Metodo | Rota | Descricao |
+|--------|------|-----------|
+| POST | `/admin/fee-collector/initialize` | Inicializar fee collector |
+| GET | `/admin/fee-collector/stats` | Estatisticas de taxas |
+| POST | `/admin/fee-collector/update-dev-wallet` | Atualizar dev wallet |
+| GET | `/admin/fee-collector/insurance-wallet` | Ver insurance wallet |
+| POST | `/admin/fee-collector/pause` | Pausar coleta |
+| POST | `/admin/fee-collector/resume` | Retomar coleta |
+
+## Monitoramento
+
+| Servico | URL Local | Credenciais |
+|---------|-----------|-------------|
+| **Bridge Service** | http://localhost:3000 | — |
+| **Grafana** | http://localhost:3001 | admin / admin123 |
+| **Prometheus** | http://localhost:9090 | — |
+| **PostgreSQL** | localhost:15432 | bridge_user / bridge_password |
+| **Redis** | localhost:16379 | — |
+
+### Logs
 
 ```json
 {
-  "timestamp": "2025-01-15T10:30:00.000Z",
+  "timestamp": "2026-02-13T22:30:00.000Z",
   "level": "info",
-  "message": "Processing Solana deposit",
+  "message": "Multisig transfer executed",
   "data": {
+    "proposalId": "prop_1707...",
     "signature": "5j7s8...",
     "amount": 1000,
-    "lunesAddress": "5GrwvaEF...",
-    "processingTime": 1.2
+    "approvals": 2
   }
 }
 ```
 
-### Categorias de Logs
+Niveis: `DEBUG` | `INFO` | `WARN` | `ERROR`
 
-- **INFO**: Operações normais
-- **WARN**: Situações de atenção
-- **ERROR**: Falhas e erros
-- **DEBUG**: Informações detalhadas
+## Troubleshooting
 
-## 🔧 Troubleshooting
+### Build falha com erros TypeScript
 
-### Problemas Comuns
-
-#### Bridge Service não inicia
 ```bash
+# Verificar versao do Node
+node -v   # deve ser >= 18
+
+# Limpar e reinstalar
+rm -rf node_modules dist
+pnpm install
+pnpm build
+```
+
+### Falta `src/contracts/tax_manager.json`
+
+Este arquivo e gerado pelo build do contrato ink! e precisa existir em `src/contracts/`:
+
+```bash
+# Se o contrato ja foi compilado, copie:
+cp ../target/ink/tax_manager/tax_manager.json src/contracts/
+```
+
+### Bridge nao conecta ao Redis/Postgres
+
+```bash
+# Verificar se os containers estao rodando
+docker-compose ps
+
 # Verificar logs
-docker-compose logs bridge-service
+docker-compose logs redis
+docker-compose logs postgres
 
-# Verificar configurações
-cat .env | grep -E "(SOLANA|LUNES|DATABASE)"
+# Testar conexao manual
+redis-cli -h 127.0.0.1 -p 16379 ping
+psql postgresql://bridge_user:bridge_password@localhost:15432/bridge_db
 ```
 
-#### Transações travadas
+### Circuit breaker aberto (propostas bloqueadas)
+
 ```bash
-# Verificar status
-curl http://localhost:3000/transactions/{signature}
+# Verificar status via API
+curl http://localhost:3000/health | jq '.circuitBreaker'
 
-# Verificar health
-curl http://localhost:3000/health
+# Resetar via admin (requer auth)
+curl -X POST http://localhost:3000/admin/circuit-breaker/reset \
+  -u ops:password
 ```
 
-#### Desbalanceamento treasury
+### Vault signer falha na inicializacao
+
 ```bash
-# Verificar paridade
-curl http://localhost:3000/metrics | grep parity
+# Verificar se Vault esta rodando
+vault status
 
-# Alertas
-tail -f logs/bridge-service.log | grep PARITY
+# Verificar se a chave Transit existe
+vault read transit/keys/solana-bridge
+
+# Verificar token tem permissao
+vault token lookup
 ```
 
-## 🤝 Contribuição
+## Contribuicao
 
 1. Fork o projeto
-2. Crie sua feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit suas mudanças (`git commit -m 'Add some AmazingFeature'`)
-4. Push para a branch (`git push origin feature/AmazingFeature`)
+2. Crie sua branch (`git checkout -b feature/nome`)
+3. Commit (`git commit -m 'feat: descricao'`)
+4. Push (`git push origin feature/nome`)
 5. Abra um Pull Request
 
-## 📄 Licença
+## Licenca
 
-Este projeto está licenciado sob a MIT License - veja o arquivo [LICENSE](LICENSE) para detalhes.
+MIT License — veja [LICENSE](LICENSE).
 
-## 📞 Suporte
+## Suporte
 
 - **Discord**: [Lunes Community](https://discord.gg/lunes)
 - **Email**: dev@lunes.io
 - **Docs**: [docs.lunes.io](https://docs.lunes.io)
-- **Issues**: [GitHub Issues](https://github.com/lunes-platform/lusdt-bridge/issues)
+- **Issues**: [GitHub Issues](https://github.com/lunes-platform/LUSDT/issues)
 
 ---
 
-**Desenvolvido com ❤️ pela equipe Lunes Platform** 
+Desenvolvido pela equipe **Lunes Platform**
