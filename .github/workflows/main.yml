@@ -1,0 +1,48 @@
+name: Deploy on Prod
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: copy files
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USER }}
+        password: ${{ secrets.PASSWORD }}
+        port: ${{ secrets.PORT }}
+        source: "."
+        target: /root/lusdt-bridge
+
+    - name: SSH into remote server and run commands
+      uses: appleboy/ssh-action@v1.2.0
+      with:
+        host: ${{ secrets.HOST }}
+        username: ${{ secrets.USER }}
+        port: ${{ secrets.PORT }}
+        password: ${{ secrets.PASSWORD }}
+        key: ${{ secrets.SSH_PRIVATE_KEY }}
+        script: |
+          export NVM_DIR=~/.nvm
+          source ~/.nvm/nvm.sh
+          TARGET_DIR=/root/lusdt-bridge
+          cd $TARGET_DIR
+          ls $TARGET_DIR          
+          PM2_NAME="lusdt-bridge"
+          echo "Configuring PM2"
+          cd $TARGET_DIR/lusdt-app
+          pm2 stop $PM2_NAME || true
+          pm2 delete $PM2_NAME || true
+          echo "pm2 $PM2_NAME e $TARGET_DIR"
+          echo "Deploying"
+          npm install --force or --legacy-peer-deps
+          pm2 start "npm run dev" --name $PM2_NAME
+          pm2 save          
+          echo "Finished"
