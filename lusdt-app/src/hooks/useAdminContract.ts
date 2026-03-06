@@ -151,7 +151,7 @@ export function useAdminContract() {
       const gasLimit = createGasLimit(api, QUERY_REF_TIME, QUERY_PROOF_SIZE);
       const { result, output } = await taxManagerContract.query.getMonthlyVolumeUsd(
         lunesWallet?.address || '',
-        { value: 0, gasLimit }
+        { gasLimit, storageDepositLimit: null }
       );
 
       if (result.isErr) throw new Error('Failed to get monthly volume');
@@ -173,7 +173,7 @@ export function useAdminContract() {
       const gasLimit = createGasLimit(api, QUERY_REF_TIME, QUERY_PROOF_SIZE);
       const { result, output } = await taxManagerContract.query.getCurrentFeeBps(
         lunesWallet?.address || '',
-        { value: 0, gasLimit }
+        { gasLimit, storageDepositLimit: null }
       );
 
       if (result.isErr) throw new Error('Failed to get current fee');
@@ -194,7 +194,7 @@ export function useAdminContract() {
       const gasLimit = createGasLimit(api, QUERY_REF_TIME, QUERY_PROOF_SIZE);
       const { result, output } = await taxManagerContract.query.getFeeConfig(
         lunesWallet?.address || '',
-        { value: 0, gasLimit }
+        { gasLimit, storageDepositLimit: null }
       );
 
       if (result.isErr || !output) return null;
@@ -225,7 +225,7 @@ export function useAdminContract() {
       const gasLimit = createGasLimit(api, QUERY_REF_TIME, QUERY_PROOF_SIZE);
       const { result, output } = await taxManagerContract.query.getWallets(
         lunesWallet?.address || '',
-        { value: 0, gasLimit }
+        { gasLimit, storageDepositLimit: null }
       );
 
       if (result.isErr || !output) return null;

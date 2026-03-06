@@ -35,7 +35,21 @@
       "esbuild",
       "protobufjs",
       "utf-8-validate"
-    ]
+    ],
+    "overrides": {
+      "fast-xml-parser": ">=5.3.8",
+      "rollup": ">=4.59.0",
+      "esbuild": ">=0.25.0",
+      "h3": ">=1.15.5",
+      "axios": ">=1.13.5",
+      "qs": ">=6.14.2",
+      "minimatch": ">=10.0.1",
+      "diff": ">=4.0.4",
+      "lodash": ">=4.17.23",
+      "lodash-es": ">=4.17.23",
+      "bn.js": ">=5.2.3",
+      "ajv": ">=6.14.0"
+    }
   },
   "keywords": [
     "lusdt",

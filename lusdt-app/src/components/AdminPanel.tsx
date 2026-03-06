@@ -3,26 +3,22 @@ import { useAdminContract } from '../hooks/useAdminContract';
 import { useWallet } from './WalletProvider';
 import {
   Shield,
-  Settings,
   TrendingUp,
   AlertTriangle,
   Eye,
   Calculator,
   Lock,
   Wallet,
-  DollarSign,
   Users,
-  Activity,
   CheckCircle,
   XCircle,
   RefreshCw,
   ArrowRight,
   Terminal,
-  Cpu
 } from 'lucide-react';
 import { TeamManagement } from './TeamManagement';
 
-type TabType = 'overview' | 'emergency' | 'fees' | 'wallets' | 'staking' | 'analytics';
+type TabType = 'overview' | 'team' | 'emergency' | 'fees' | 'wallets' | 'staking' | 'analytics';
 
 export function AdminPanel() {
   const { lunesWallet } = useWallet();
@@ -32,7 +28,6 @@ export function AdminPanel() {
     error,
     stats,
     isAdmin,
-    adminChecked,
     refreshStats,
     updateLunesPrice,
     updateFeeConfig,
@@ -44,6 +39,7 @@ export function AdminPanel() {
 
   const [activeTab, setActiveTab] = useState<TabType>('overview');
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   // Form states
   const [lunesPriceInput, setLunesPriceInput] = useState('0.50');
@@ -82,26 +78,42 @@ export function AdminPanel() {
   }, [stats.feeConfig, stats.distributionWallets, stats.lunesPrice]);
 
   const showSuccess = (message: string) => {
+    setActionError(null);
     setSuccessMessage(message);
     setTimeout(() => setSuccessMessage(null), 5000);
   };
 
+  const showError = (err: unknown) => {
+    const msg = err instanceof Error ? err.message : String(err);
+    setActionError(msg);
+    setTimeout(() => setActionError(null), 8000);
+  };
+
   const handleUpdateLunesPrice = async () => {
+    const price = parseFloat(lunesPriceInput);
+    if (Number.isNaN(price) || price <= 0 || price > 1000) {
+      showError('Preço inválido: deve ser entre 0 e 1000 USD');
+      return;
+    }
     try {
-      await updateLunesPrice(parseFloat(lunesPriceInput));
+      await updateLunesPrice(price);
       showSuccess('Preço do LUNES atualizado com sucesso!');
     } catch (err) {
-      console.error('Error:', err);
+      showError(err);
     }
   };
 
   const handlePauseContract = async () => {
+    if (!pauseReason.trim()) {
+      showError('O motivo da pausa é obrigatório');
+      return;
+    }
     try {
-      await pauseContract(pauseReason);
+      await pauseContract(pauseReason.trim());
       showSuccess('Contrato pausado com sucesso!');
       setPauseReason('');
     } catch (err) {
-      console.error('Error:', err);
+      showError(err);
     }
   };
 
@@ -110,16 +122,22 @@ export function AdminPanel() {
       await unpauseContract();
       showSuccess('Contrato despausado com sucesso!');
     } catch (err) {
-      console.error('Error:', err);
+      showError(err);
     }
   };
 
   const handleUpdateFeeConfig = async () => {
+    const { low_volume_fee_bps, medium_volume_fee_bps, high_volume_fee_bps } = feeConfigForm;
+    if (low_volume_fee_bps < 0 || medium_volume_fee_bps < 0 || high_volume_fee_bps < 0 ||
+        low_volume_fee_bps > 10000 || medium_volume_fee_bps > 10000 || high_volume_fee_bps > 10000) {
+      showError('Taxas devem estar entre 0 e 10000 bps (0-100%)');
+      return;
+    }
     try {
       await updateFeeConfig(feeConfigForm);
       showSuccess('Configuração de taxas atualizada com sucesso!');
     } catch (err) {
-      console.error('Error:', err);
+      showError(err);
     }
   };
 
@@ -128,7 +146,7 @@ export function AdminPanel() {
       await updateDistributionWallets(walletForm);
       showSuccess('Carteiras de distribuição atualizadas com sucesso!');
     } catch (err) {
-      console.error('Error:', err);
+      showError(err);
     }
   };
 
@@ -317,10 +335,10 @@ export function AdminPanel() {
               <span className="text-xs font-mono text-green-400">{successMessage}</span>
             </div>
           )}
-          {error && (
+          {(error || actionError) && (
             <div className="mb-6 p-3 bg-red-900/10 border border-red-900/30 rounded-sm flex items-center gap-3 animate-in fade-in slide-in-from-top-2">
               <XCircle size={16} className="text-red-500" />
-              <span className="text-xs font-mono text-red-400">{error}</span>
+              <span className="text-xs font-mono text-red-400">{actionError || error}</span>
             </div>
           )}
 

@@ -6,7 +6,7 @@ import { useBridgeAPI, useTransactionPolling, TransactionRecord } from '../api/b
 import { DataValidator, SecureErrorHandler, ClientRateLimiter, WalletSecurity } from '../utils/security'
 import { CONTRACT_ADDRESSES } from '../contracts/addresses'
 import { useToast } from './ui/Toast'
-import { ArrowLeftRight, AlertCircle, CheckCircle, Loader2, Terminal, Activity, ArrowRight } from 'lucide-react'
+import { AlertCircle, CheckCircle, Loader2, Terminal, Activity, ArrowRight } from 'lucide-react'
 
 type BridgeDirection = 'solana-to-lunes' | 'lunes-to-solana'
 
@@ -18,8 +18,6 @@ export function BridgeInterface() {
     isPaused,
     getMonthlyVolume,
     getLusdtBalance,
-    isReady,
-    error: contractError,
     checkTaxManagerApproval,
     approveLusdtForTaxManager,
     approveLunesForTaxManager,
@@ -65,7 +63,7 @@ export function BridgeInterface() {
     !!activeTxId
   )
 
-  const [monthlyVolume, setMonthlyVolume] = useState('0')
+  const [, setMonthlyVolume] = useState('0')
   const [feeInfo, setFeeInfo] = useState<{
     feeAmount: string
     feeCurrency: string
@@ -251,18 +249,36 @@ export function BridgeInterface() {
       } else {
         txHash = await burnLusdt(amountValidation.sanitizedAmount, targetWallet.address);
 
-        const bridgeTx = await bridgeAPI.createBridgeTransaction({
-          sourceChain: 'lunes',
-          destinationChain: 'solana',
-          amount: amountValidation.sanitizedAmount,
-          sourceAddress: sourceWallet.address,
-          destinationAddress: targetWallet.address,
-          sourceSignature: txHash
-        });
+        // IMPORTANT: LUSDT is already burned on-chain at this point.
+        // Retry createBridgeTransaction up to 3 times so the bridge service
+        // can pick it up. If all retries fail, show the on-chain tx hash so
+        // the user can contact support — funds are NOT lost (bridge monitors chain).
+        let bridgeTx: { transactionId: string } | null = null;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+          try {
+            bridgeTx = await bridgeAPI.createBridgeTransaction({
+              sourceChain: 'lunes',
+              destinationChain: 'solana',
+              amount: amountValidation.sanitizedAmount,
+              sourceAddress: sourceWallet.address,
+              destinationAddress: targetWallet.address,
+              sourceSignature: txHash
+            });
+            break;
+          } catch (regErr) {
+            if (attempt === 3) {
+              // Could not register — show on-chain tx hash for support
+              toast.error(
+                "REGISTRATION_FAILED",
+                `LUSDT queimado (tx: ${txHash.slice(0, 16)}...). Contate o suporte com esse hash.`
+              );
+              throw new Error(`Bridge record failed after 3 attempts. On-chain tx: ${txHash}`);
+            }
+            await new Promise(r => setTimeout(r, 1000 * attempt));
+          }
+        }
 
-
-        bridgeTransactionId = bridgeTx.transactionId;
-
+        bridgeTransactionId = bridgeTx!.transactionId;
         toast.success("ASSET_MIGRATION_INITIATED", "Funds transferred. Verification in progress.");
       }
 
