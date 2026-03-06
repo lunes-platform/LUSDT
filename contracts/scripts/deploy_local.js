@@ -107,11 +107,10 @@ async function main() {
     // Constructor: new(lunes_token_address, lusdt_token_address, distribution_wallets, initial_lunes_price)
     // For initial deploy, we pass Alice's address as token addresses (will update later)
     const distributionWallets = {
-        dev: alice.address,
-        dao: keyring.addFromUri('//Bob').address,
-        backing_fund: charlie.address,
-        rewards_fund: keyring.addFromUri('//Dave').address,
-        burn_address: keyring.addFromUri('//Eve').address
+        dev_solana: alice.address,
+        dev_lunes: keyring.addFromUri('//Bob').address,
+        insurance_fund: charlie.address,
+        staking_rewards_pool: keyring.addFromUri('//Dave').address
     };
 
     let taxManagerAddress;

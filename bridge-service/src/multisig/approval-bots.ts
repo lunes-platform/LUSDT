@@ -26,12 +26,12 @@ import { logger } from '../utils/logger';
 export abstract class ApprovalBot {
   protected botId: string;
   protected botRole: BotRole;
-  protected hmacSecret: string;
+  protected signer: ISigner;
 
-  constructor(botId: string, botRole: BotRole, hmacSecret: string) {
+  constructor(botId: string, botRole: BotRole, signer: ISigner) {
     this.botId = botId;
     this.botRole = botRole;
-    this.hmacSecret = hmacSecret;
+    this.signer = signer;
   }
 
   /**
@@ -42,7 +42,7 @@ export abstract class ApprovalBot {
       const result = await this.validate(proposal);
 
       if (result.valid && result.riskScore < 80) {
-        return this.createApproval(proposal, result);
+        return await this.createApproval(proposal, result);
       } else {
         const failedChecks = result.checks.filter(c => !c.passed);
         const reason = failedChecks.map(c => `${c.name}: ${c.detail}`).join('; ');
@@ -64,8 +64,8 @@ export abstract class ApprovalBot {
 
   protected abstract validate(proposal: MultisigProposal): Promise<ValidationResult>;
 
-  private createApproval(proposal: MultisigProposal, result: ValidationResult): BotApproval {
-    const signature = this.signProposal(proposal);
+  private async createApproval(proposal: MultisigProposal, result: ValidationResult): Promise<BotApproval> {
+    const signature = await this.signProposal(proposal);
     return {
       botId: this.botId,
       botRole: this.botRole,
@@ -89,9 +89,10 @@ export abstract class ApprovalBot {
     };
   }
 
-  private signProposal(proposal: MultisigProposal): string {
+  private async signProposal(proposal: MultisigProposal): Promise<string> {
     const payload = `${proposal.id}:${proposal.recipient}:${proposal.amount}:${proposal.tokenMint}`;
-    return crypto.createHmac('sha256', this.hmacSecret).update(payload).digest('hex');
+    const signatureBuffer = await this.signer.sign(new Uint8Array(Buffer.from(payload)));
+    return Buffer.from(signatureBuffer).toString('hex');
   }
 }
 
@@ -106,8 +107,8 @@ export interface OriginValidatorDeps {
 export class OriginValidatorBot extends ApprovalBot {
   private deps: OriginValidatorDeps;
 
-  constructor(botId: string, hmacSecret: string, deps: OriginValidatorDeps) {
-    super(botId, 'origin_validator', hmacSecret);
+  constructor(botId: string, signer: ISigner, deps: OriginValidatorDeps) {
+    super(botId, 'origin_validator', signer);
     this.deps = deps;
   }
 
@@ -178,7 +179,7 @@ export class RiskValidatorBot extends ApprovalBot {
 
   constructor(
     botId: string,
-    hmacSecret: string,
+    signer: ISigner,
     deps: RiskValidatorDeps,
     options?: {
       maxProposalsPerHour?: number;
@@ -186,7 +187,7 @@ export class RiskValidatorBot extends ApprovalBot {
       maxRecipientDailyVolume?: number;
     },
   ) {
-    super(botId, 'risk_validator', hmacSecret);
+    super(botId, 'risk_validator', signer);
     this.deps = deps;
     this.maxProposalsPerHour = options?.maxProposalsPerHour ?? 20;
     this.suspiciousAmountThreshold = options?.suspiciousAmountThreshold ?? 50_000;
@@ -256,8 +257,8 @@ export interface BackupValidatorDeps {
 export class BackupValidatorBot extends ApprovalBot {
   private deps: BackupValidatorDeps;
 
-  constructor(botId: string, hmacSecret: string, deps: BackupValidatorDeps) {
-    super(botId, 'backup_validator', hmacSecret);
+  constructor(botId: string, signer: ISigner, deps: BackupValidatorDeps) {
+    super(botId, 'backup_validator', signer);
     this.deps = deps;
   }
 

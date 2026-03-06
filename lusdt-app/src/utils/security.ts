@@ -16,18 +16,20 @@ export class InputSanitizer {
   }
 
   // Valida e sanitiza endereços
+  // Suporta Solana (base58, 32-44 chars) e Substrate/Lunes SS58 (base58, 47-48 chars)
   static sanitizeAddress(address: string): string {
     if (typeof address !== 'string') return '';
 
-    // Remove todos os caracteres não hexadecimais
-    const cleanAddress = address.replace(/[^a-fA-F0-9]/g, '');
+    // Base58 charset (usado por Solana e Substrate)
+    const base58Chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    const clean = address.trim().split('').filter(c => base58Chars.includes(c)).join('');
 
-    // Valida comprimento (endereços Solana têm 32 bytes = 64 chars hex)
-    if (cleanAddress.length !== 64) {
+    // Solana: 32-44 chars | Substrate SS58: 47-48 chars
+    if (clean.length < 32 || clean.length > 48) {
       throw new Error('Invalid address format');
     }
 
-    return cleanAddress;
+    return clean;
   }
 
   // Valida e sanitiza valores numéricos
@@ -472,11 +474,12 @@ export class XSSProtection {
 export class CSRFProtection {
   private static token: string | null = null;
 
-  // Gera token CSRF
+  // Gera token CSRF usando crypto.getRandomValues() (criptograficamente seguro)
   static generateToken(): string {
     if (!CSRFProtection.token) {
-      CSRFProtection.token = Math.random().toString(36).substring(2, 15) +
-                            Math.random().toString(36).substring(2, 15);
+      const array = new Uint8Array(32);
+      crypto.getRandomValues(array);
+      CSRFProtection.token = Array.from(array, b => b.toString(16).padStart(2, '0')).join('');
     }
     return CSRFProtection.token;
   }

@@ -402,7 +402,7 @@ export function useLunesContract() {
       const gasLimit = createGasLimit(api!, TX_REF_TIME, TX_PROOF_SIZE);
 
       const result = await lusdtContract.tx
-        .pause({ gasLimit, storageDepositLimit: null })
+        .emergencyPause({ gasLimit, storageDepositLimit: null }, 'Admin action')
         .signAndSend(lunesWallet.address, { signer }, ({ status, dispatchError }) => {
           if (dispatchError) {
             throw new Error(`Transaction failed: ${dispatchError.toString()}`);
@@ -438,7 +438,7 @@ export function useLunesContract() {
       const gasLimit = createGasLimit(api!, TX_REF_TIME, TX_PROOF_SIZE);
 
       const result = await lusdtContract.tx
-        .unpause({ gasLimit, storageDepositLimit: null })
+        .emergencyUnpause({ gasLimit, storageDepositLimit: null })
         .signAndSend(lunesWallet.address, { signer }, ({ status, dispatchError }) => {
           if (dispatchError) {
             throw new Error(`Transaction failed: ${dispatchError.toString()}`);

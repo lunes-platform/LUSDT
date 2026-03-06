@@ -42,7 +42,7 @@ export interface BotApproval {
   botId: string;
   botRole: BotRole;
   timestamp: number;
-  signature: string;            // HMAC signature of proposal data
+  signature: string;            // Asymmetric signature of proposal data
   validationDetails: ValidationResult;
 }
 

@@ -26,7 +26,7 @@ fi
 
 # Check node connectivity
 echo -e "${BLUE}📡 Checking node connectivity...${NC}"
-if ! timeout 5 bash -c "echo > /dev/tcp/localhost/9944" 2>/dev/null; then
+if ! nc -z localhost 9944 2>/dev/null; then
     echo -e "${RED}❌ Cannot connect to localhost:9944. Is the Lunes node running?${NC}"
     exit 1
 fi

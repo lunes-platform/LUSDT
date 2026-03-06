@@ -204,6 +204,39 @@ export class LunesClient {
     }
   }
 
+  /**
+   * Query Tax Manager for current LUNES price in USD (6-decimal fixed point).
+   * Falls back to $0.50 if the contract is unavailable.
+   */
+  async queryLunesPrice(): Promise<number> {
+    try {
+      if (!this.taxManagerContract) {
+        return 0.50;
+      }
+
+      const gasLimit = this.api.registry.createType('WeightV2', {
+        refTime: 5_000_000_000_000n,
+        proofSize: 5_000_000n
+      }) as any;
+
+      const result = await this.taxManagerContract.query.getLunesPrice(
+        this.account.address,
+        { gasLimit, storageDepositLimit: null }
+      );
+
+      if (result.result.isOk && result.output) {
+        const raw = parseInt(result.output.toString(), 10);
+        if (raw > 0) {
+          return raw / 1_000_000; // 6-decimal fixed point → USD
+        }
+      }
+
+      return 0.50;
+    } catch {
+      return 0.50;
+    }
+  }
+
   async getTotalSupply(): Promise<number> {
     try {
       if (!this.contract) {
@@ -250,83 +283,89 @@ export class LunesClient {
   }
 
   async mintLUSDT(recipient: string, amount: number): Promise<string> {
-    try {
-      logger.info('🪙 Minting LUSDT', { recipient, amount });
+    logger.info('🪙 Minting LUSDT', { recipient, amount });
 
-      if (!this.contract) {
-        throw new Error('Contract not loaded');
-      }
-
-      // Estima gas
-      const gasLimit = this.api.registry.createType('WeightV2', {
-        refTime: 100_000_000_000,
-        proofSize: 100_000
-      }) as any;
-
-      // Chama mint
-      const result = await this.contract.tx
-        .mint({
-          gasLimit,
-          storageDepositLimit: null
-        }, recipient, Math.round(amount * LunesClient.LUSDT_MULTIPLIER)) // Convert to smallest unit
-        .signAndSend(this.account);
-
-      logger.info('✅ LUSDT mint transaction sent', {
-        txHash: result.toString(),
-        recipient,
-        amount
-      });
-
-      return result.toString();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('❌ LUSDT mint failed', {
-        error: message,
-        stack: error instanceof Error ? error.stack : undefined,
-        recipient,
-        amount
-      });
-      throw error;
+    if (!this.contract) {
+      throw new Error('Contract not loaded');
     }
+
+    const gasLimit = this.api.registry.createType('WeightV2', {
+      refTime: 100_000_000_000,
+      proofSize: 100_000
+    }) as any;
+
+    const rawAmount = Math.round(amount * LunesClient.LUSDT_MULTIPLIER);
+
+    return new Promise<string>((resolve, reject) => {
+      let unsub: (() => void) | undefined;
+
+      this.contract.tx
+        .mint({ gasLimit, storageDepositLimit: null }, recipient, rawAmount)
+        .signAndSend(this.account, ({ status, dispatchError }) => {
+          if (dispatchError) {
+            const errMsg = dispatchError.isModule
+              ? (() => {
+                  const decoded = this.api.registry.findMetaError(dispatchError.asModule);
+                  return `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+                })()
+              : dispatchError.toString();
+            if (unsub) unsub();
+            reject(new Error(`LUSDT mint dispatch error: ${errMsg}`));
+          } else if (status.isInBlock) {
+            const blockHash = status.asInBlock.toString();
+            logger.info('✅ LUSDT mint confirmed in block', { blockHash, recipient, amount });
+            if (unsub) unsub();
+            resolve(blockHash);
+          }
+        })
+        .then(unsubFn => { unsub = unsubFn; })
+        .catch(err => {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+    });
   }
 
   async burnLUSDT(amount: number, solanaRecipient: string): Promise<string> {
-    try {
-      logger.info('🔥 Burning LUSDT', { amount, solanaRecipient });
+    logger.info('🔥 Burning LUSDT', { amount, solanaRecipient });
 
-      if (!this.contract) {
-        throw new Error('Contract not loaded');
-      }
-
-      const gasLimit = this.api.registry.createType('WeightV2', {
-        refTime: 100_000_000_000,
-        proofSize: 100_000
-      }) as any;
-
-      const result = await this.contract.tx
-        .burn({
-          gasLimit,
-          storageDepositLimit: null
-        }, Math.round(amount * LunesClient.LUSDT_MULTIPLIER), solanaRecipient)
-        .signAndSend(this.account);
-
-      logger.info('✅ LUSDT burn transaction sent', {
-        txHash: result.toString(),
-        amount,
-        solanaRecipient
-      });
-
-      return result.toString();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      logger.error('❌ LUSDT burn failed', {
-        error: message,
-        stack: error instanceof Error ? error.stack : undefined,
-        amount,
-        solanaRecipient
-      });
-      throw error;
+    if (!this.contract) {
+      throw new Error('Contract not loaded');
     }
+
+    const gasLimit = this.api.registry.createType('WeightV2', {
+      refTime: 100_000_000_000,
+      proofSize: 100_000
+    }) as any;
+
+    const rawAmount = Math.round(amount * LunesClient.LUSDT_MULTIPLIER);
+
+    return new Promise<string>((resolve, reject) => {
+      let unsub: (() => void) | undefined;
+
+      this.contract.tx
+        .burn({ gasLimit, storageDepositLimit: null }, rawAmount, solanaRecipient)
+        .signAndSend(this.account, ({ status, dispatchError }) => {
+          if (dispatchError) {
+            const errMsg = dispatchError.isModule
+              ? (() => {
+                  const decoded = this.api.registry.findMetaError(dispatchError.asModule);
+                  return `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+                })()
+              : dispatchError.toString();
+            if (unsub) unsub();
+            reject(new Error(`LUSDT burn dispatch error: ${errMsg}`));
+          } else if (status.isInBlock) {
+            const blockHash = status.asInBlock.toString();
+            logger.info('✅ LUSDT burn confirmed in block', { blockHash, amount, solanaRecipient });
+            if (unsub) unsub();
+            resolve(blockHash);
+          }
+        })
+        .then(unsubFn => { unsub = unsubFn; })
+        .catch(err => {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        });
+    });
   }
 
   async watchForBurnEvents(callback: (event: LunesTransfer) => void): Promise<void> {

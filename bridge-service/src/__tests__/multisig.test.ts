@@ -18,7 +18,14 @@ import {
   RiskValidatorDeps,
   BackupValidatorDeps,
 } from '../multisig/approval-bots';
-import { MultisigProposal, BotApproval, BotRejection } from '../multisig/types';
+import { MultisigProposal, BotApproval, BotRejection, ISigner } from '../multisig/types';
+
+// Mock ISigner — used in place of the old hmacSecret string
+const mockSigner: ISigner = {
+  getPublicKey: async () => 'mock-pubkey-32bytesXXXXXXXXXXXX',
+  sign: async (_msg: Uint8Array) => new Uint8Array(32),
+  signTransaction: async (tx: unknown) => tx,
+};
 
 // ══════════════════════════════════════════════════════════════════════
 // Circuit Breaker
@@ -307,25 +314,25 @@ describe('OriginValidatorBot', () => {
   });
 
   test('approves valid finalized transaction', async () => {
-    const bot = new OriginValidatorBot('bot-o', 'secret', makeDeps(true, 1000));
+    const bot = new OriginValidatorBot('bot-o', mockSigner, makeDeps(true, 1000));
     const result = await bot.evaluate(makeProposal());
     expect('validationDetails' in result).toBe(true); // Is approval
   });
 
   test('rejects non-finalized transaction', async () => {
-    const bot = new OriginValidatorBot('bot-o', 'secret', makeDeps(false, 1000));
+    const bot = new OriginValidatorBot('bot-o', mockSigner, makeDeps(false, 1000));
     const result = await bot.evaluate(makeProposal());
     expect('reason' in result).toBe(true); // Is rejection
   });
 
   test('rejects when source amount does not match', async () => {
-    const bot = new OriginValidatorBot('bot-o', 'secret', makeDeps(true, 500)); // mismatch
+    const bot = new OriginValidatorBot('bot-o', mockSigner, makeDeps(true, 500)); // mismatch
     const result = await bot.evaluate(makeProposal());
     expect('reason' in result).toBe(true);
   });
 
   test('rejects when no source signature', async () => {
-    const bot = new OriginValidatorBot('bot-o', 'secret', makeDeps(true, 1000));
+    const bot = new OriginValidatorBot('bot-o', mockSigner, makeDeps(true, 1000));
     const result = await bot.evaluate(makeProposal({ metadata: {} }));
     // No source signature → higher risk but may still pass or fail depending on other checks
     expect(result).toBeDefined();
@@ -360,26 +367,26 @@ describe('RiskValidatorBot', () => {
   });
 
   test('approves normal transfer', async () => {
-    const bot = new RiskValidatorBot('bot-r', 'secret', makeDeps());
+    const bot = new RiskValidatorBot('bot-r', mockSigner, makeDeps());
     const result = await bot.evaluate(makeProposal());
     expect('validationDetails' in result).toBe(true);
   });
 
   test('rejects when vault balance insufficient', async () => {
-    const bot = new RiskValidatorBot('bot-r', 'secret', makeDeps(5, { totalSent: 0, txCount: 0 }, 500));
+    const bot = new RiskValidatorBot('bot-r', mockSigner, makeDeps(5, { totalSent: 0, txCount: 0 }, 500));
     const result = await bot.evaluate(makeProposal(1000));
     expect('reason' in result).toBe(true);
   });
 
   test('flags high velocity but may still approve', async () => {
-    const bot = new RiskValidatorBot('bot-r', 'secret', makeDeps(25)); // over limit
+    const bot = new RiskValidatorBot('bot-r', mockSigner, makeDeps(25)); // over limit
     const result = await bot.evaluate(makeProposal());
     // High velocity alone may not block (risk < 80)
     expect(result).toBeDefined();
   });
 
   test('rejects when recipient exceeds daily volume + vault insufficient', async () => {
-    const bot = new RiskValidatorBot('bot-r', 'secret', makeDeps(
+    const bot = new RiskValidatorBot('bot-r', mockSigner, makeDeps(
       5,
       { totalSent: 24_000, txCount: 10 }, // Near limit
       500, // Insufficient vault
@@ -417,25 +424,25 @@ describe('BackupValidatorBot', () => {
   });
 
   test('approves when all systems healthy', async () => {
-    const bot = new BackupValidatorBot('bot-b', 'secret', makeDeps());
+    const bot = new BackupValidatorBot('bot-b', mockSigner, makeDeps());
     const result = await bot.evaluate(makeProposal());
     expect('validationDetails' in result).toBe(true);
   });
 
   test('rejects when service unhealthy + db unreachable', async () => {
-    const bot = new BackupValidatorBot('bot-b', 'secret', makeDeps(false, false));
+    const bot = new BackupValidatorBot('bot-b', mockSigner, makeDeps(false, false));
     const result = await bot.evaluate(makeProposal());
     expect('reason' in result).toBe(true);
   });
 
   test('rejects when DB amount mismatch', async () => {
-    const bot = new BackupValidatorBot('bot-b', 'secret', makeDeps(true, true, { amount: 999, status: 'pending' }));
+    const bot = new BackupValidatorBot('bot-b', mockSigner, makeDeps(true, true, { amount: 999, status: 'pending' }));
     const result = await bot.evaluate(makeProposal());
     expect('reason' in result).toBe(true);
   });
 
   test('flags risk when no DB record found (riskScore=60, below block threshold)', async () => {
-    const bot = new BackupValidatorBot('bot-b', 'secret', makeDeps(true, true, null));
+    const bot = new BackupValidatorBot('bot-b', mockSigner, makeDeps(true, true, null));
     const result = await bot.evaluate(makeProposal());
     // riskScore=60 (no DB record) is below 80 block threshold, so it approves with a flag
     expect('validationDetails' in result).toBe(true);

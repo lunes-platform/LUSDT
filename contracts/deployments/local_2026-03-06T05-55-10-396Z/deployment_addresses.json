@@ -1,0 +1,14 @@
+{
+  "network": "local",
+  "rpc_endpoint": "ws://localhost:9944",
+  "timestamp": "2026-03-06T05-55-10-396Z",
+  "contracts": {
+    "tax_manager": "5GSeBErmvU6aSghn1faMTWaDiavyZbH86CwxWwowqX49qTKT",
+    "lusdt_token": "5FzeWTSVr2Y6Z49UK2D4BVPRtvwYMHQf3CFwgwTFPb3ibFzZ"
+  },
+  "accounts": {
+    "owner": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY (//Alice)",
+    "bridge": "5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY (//Alice)",
+    "emergency_admin": "5FLSigC9HGRKVhB9FiEo4Y3koPsNmBmLJbpXg2mp1hXcS59Y (//Charlie)"
+  }
+}

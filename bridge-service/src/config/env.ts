@@ -66,10 +66,10 @@ export const config = {
   // Multisig Enforcement — when true, outbound USDT transfers require vault verification
   REQUIRE_MULTISIG_VAULT: process.env.REQUIRE_MULTISIG_VAULT === 'true',
 
-  // Multisig Bot Secrets (HMAC keys for each bot — use HSM/KMS in production)
-  BOT_ORIGIN_SECRET: process.env.BOT_ORIGIN_SECRET || '',
-  BOT_RISK_SECRET: process.env.BOT_RISK_SECRET || '',
-  BOT_BACKUP_SECRET: process.env.BOT_BACKUP_SECRET || '',
+  // Multisig Bot Signer References (e.g. KMS Key IDs or Vault definitions)
+  BOT_ORIGIN_KEY_ID: process.env.BOT_ORIGIN_KEY_ID || '',
+  BOT_RISK_KEY_ID: process.env.BOT_RISK_KEY_ID || '',
+  BOT_BACKUP_KEY_ID: process.env.BOT_BACKUP_KEY_ID || '',
 
   // Multisig Policy
   MULTISIG_REQUIRED_APPROVALS: parseInt(process.env.MULTISIG_REQUIRED_APPROVALS || '2'),
@@ -123,12 +123,16 @@ export function validateConfig(): void {
   }
 
   if (config.NODE_ENV === 'production') {
-    if (!config.DISCORD_WEBHOOK_URL && !config.ALERT_EMAIL) {
-      throw new Error('At least one alert method (Discord or Email) must be configured in production');
+    if (!config.ALERT_EMAIL) {
+      throw new Error('ALERT_EMAIL must be configured in production for monitoring alerts');
     }
 
     if (!config.OPS_BASIC_AUTH_USER || !config.OPS_BASIC_AUTH_PASS) {
       throw new Error('Missing OPS_BASIC_AUTH_USER/OPS_BASIC_AUTH_PASS (required to protect ops/admin endpoints in production)');
+    }
+
+    if (!config.REQUIRE_MULTISIG_VAULT) {
+      throw new Error('REQUIRE_MULTISIG_VAULT must be true in production — single-signer execution is not allowed');
     }
   }
 }

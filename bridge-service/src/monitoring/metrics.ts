@@ -1,3 +1,4 @@
+import https from 'https';
 import { SolanaClient } from '../solana/client';
 import { LunesClient } from '../lunes/client';
 import { Database } from '../bridge/database';
@@ -365,21 +366,65 @@ export class BridgeMonitoring {
 
   private async sendAlert(message: string, data?: any): Promise<void> {
     try {
-      // Implementar notificações (Discord, Email, etc.)
       logger.error(`🚨 ALERT: ${message}`, data);
-      
-      // TODO: Implementar Discord webhook
-      if (config.DISCORD_WEBHOOK_URL) {
-        // await this.sendDiscordNotification(message, data);
-      }
-      
-      // TODO: Implementar notificação por email
+
       if (config.ALERT_EMAIL) {
-        // await this.sendEmailNotification(message, data);
+        const subject = `[LUSDT Bridge] ALERT: ${message}`;
+        const body = `${message}\n\nDetails:\n${data ? JSON.stringify(data, null, 2) : 'N/A'}\n\nTimestamp: ${new Date().toISOString()}`;
+        await this.sendEmailAlert(subject, body);
       }
     } catch (error) {
       const errMessage = error instanceof Error ? error.message : String(error);
       logger.error('Failed to send alert', { error: errMessage });
     }
+  }
+
+  /**
+   * Sends an email alert via Mailgun HTTP API.
+   * Required env vars: MAILGUN_API_KEY, MAILGUN_DOMAIN
+   * Optional: ALERT_FROM_EMAIL (defaults to noreply@<domain>)
+   */
+  private async sendEmailAlert(subject: string, body: string): Promise<void> {
+    const apiKey = process.env.MAILGUN_API_KEY;
+    const domain = process.env.MAILGUN_DOMAIN;
+    const to = config.ALERT_EMAIL;
+    const from = process.env.ALERT_FROM_EMAIL || (domain ? `noreply@${domain}` : '');
+
+    if (!apiKey || !domain || !to || !from) {
+      logger.warn('Email alert skipped: missing MAILGUN_API_KEY, MAILGUN_DOMAIN, or ALERT_EMAIL');
+      return;
+    }
+
+    const formData = new URLSearchParams({ from, to, subject, text: body }).toString();
+    const auth = Buffer.from(`api:${apiKey}`).toString('base64');
+
+    return new Promise<void>((resolve) => {
+      const req = https.request(
+        {
+          hostname: 'api.mailgun.net',
+          path: `/v3/${domain}/messages`,
+          method: 'POST',
+          headers: {
+            Authorization: `Basic ${auth}`,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'Content-Length': Buffer.byteLength(formData),
+          },
+        },
+        (res) => {
+          if (res.statusCode && res.statusCode < 300) {
+            logger.info(`✉️ Alert email sent to ${to}`, { subject });
+          } else {
+            logger.error(`Failed to send alert email: HTTP ${res.statusCode}`);
+          }
+          resolve();
+        },
+      );
+      req.on('error', (err) => {
+        logger.error('Failed to send alert email', { error: err.message });
+        resolve(); // non-critical: don't propagate
+      });
+      req.write(formData);
+      req.end();
+    });
   }
 }

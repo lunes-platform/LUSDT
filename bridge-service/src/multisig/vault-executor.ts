@@ -32,7 +32,7 @@ export interface VaultExecutorConfig {
   connection: Connection;
   usdtMint: PublicKey;
   signer: ISigner;
-  botSecrets: { origin: string; risk: string; backup: string };
+  botSigners: { origin: ISigner; risk: ISigner; backup: ISigner };
   originDeps: OriginValidatorDeps;
   riskDeps: RiskValidatorDeps;
   backupDeps: BackupValidatorDeps;
@@ -70,9 +70,9 @@ export class VaultExecutor {
     );
 
     this.bots = [
-      new OriginValidatorBot('bot-origin-01', cfg.botSecrets.origin, cfg.originDeps),
-      new RiskValidatorBot('bot-risk-01', cfg.botSecrets.risk, cfg.riskDeps),
-      new BackupValidatorBot('bot-backup-01', cfg.botSecrets.backup, cfg.backupDeps),
+      new OriginValidatorBot('bot-origin-01', cfg.botSigners.origin, cfg.originDeps),
+      new RiskValidatorBot('bot-risk-01', cfg.botSigners.risk, cfg.riskDeps),
+      new BackupValidatorBot('bot-backup-01', cfg.botSigners.backup, cfg.backupDeps),
     ];
   }
 

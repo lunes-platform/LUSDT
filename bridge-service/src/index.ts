@@ -13,6 +13,8 @@ import { BridgeProcessor } from './bridge/processor';
 import { Database } from './bridge/database';
 import { BridgeMonitoring } from './monitoring/metrics';
 import { UsdtFeeCollector } from './bridge/usdt-fee-collector';
+import { VaultExecutor } from './multisig/vault-executor';
+import { LocalSigner, createSigner } from './multisig/hsm-signer';
 import { logger } from './utils/logger';
 import { config, validateConfig } from './config/env';
 import { AdminRoutes } from './admin/adminRoutes';
@@ -26,6 +28,7 @@ class BridgeService {
   private lunesClient?: LunesClient;
   private database?: Database;
   private bridgeProcessor?: BridgeProcessor;
+  private vaultExecutor?: VaultExecutor;
   private monitoring?: BridgeMonitoring;
   private feeCollector?: UsdtFeeCollector;
   private adminRoutes: AdminRoutes;
@@ -56,18 +59,23 @@ class BridgeService {
   /**
    * v3 Dual-fee calculation: stablecoin fee (revenue) + LUNES burn fee
    * Returns both fees for display to the user.
+   * @param stablecoinFeeBps - fee in basis points from Tax Manager (default 60 = 0.60%)
+   * @param lunesPriceUsd    - current LUNES price in USD (default 0.50)
    */
-  private calculateFee(amount: number, feeType: 'usdt' | 'lusdt' | 'lunes'): {
+  private calculateFee(
+    amount: number,
+    feeType: 'usdt' | 'lusdt' | 'lunes',
+    stablecoinFeeBps: number = 60,
+    lunesPriceUsd: number = 0.50,
+  ): {
     amount: number;
     currency: string;
     lunesBurnFee: number;
     lunesBurnCurrency: string;
     totalFeeUsd: number;
   } {
-    // Stablecoin fee: 0.30% - 0.60% based on volume tier (using default 0.60% for now)
-    const stablecoinFeeBps = 60; // 0.60% — will be fetched from contract in production
-    const lunesBurnFeeBps = 10;  // 0.10% — LUNES burn fee
-    const lunesPrice = 0.50;     // $0.50 — will be fetched from contract in production
+    const lunesBurnFeeBps = 10;  // 0.10% — LUNES burn fee (fixed)
+    const lunesPrice = lunesPriceUsd;
 
     const stablecoinFee = (amount * stablecoinFeeBps) / 10000;
 
@@ -496,8 +504,14 @@ class BridgeService {
           return;
         }
 
+        // Query live fee rate and LUNES price from Tax Manager; fall back to defaults
+        const [liveFeeBps, liveLunesPrice] = await Promise.all([
+          this.lunesClient ? this.lunesClient.queryTaxManagerFeeBps() : Promise.resolve(60),
+          this.lunesClient ? this.lunesClient.queryLunesPrice() : Promise.resolve(0.50),
+        ]);
+
         const optimalFeeType = feeType || this.determineOptimalFeeType(parsedAmount, sourceChain);
-        const fee = this.calculateFee(parsedAmount, optimalFeeType);
+        const fee = this.calculateFee(parsedAmount, optimalFeeType, liveFeeBps, liveLunesPrice);
         const stablecoinFeePercentage = (fee.amount / parsedAmount) * 100;
         const totalFeePercentage = (fee.totalFeeUsd / parsedAmount) * 100;
 
@@ -541,6 +555,16 @@ class BridgeService {
           res.status(400).json({
             error: 'Missing required fields: amount, sourceAddress, destinationAddress'
           });
+          return;
+        }
+
+        // Validate address formats
+        if (!this.isValidSolanaAddress(sourceAddress)) {
+          res.status(400).json({ error: 'Invalid sourceAddress: expected Solana base58 public key' });
+          return;
+        }
+        if (!this.isValidLunesAddress(destinationAddress)) {
+          res.status(400).json({ error: 'Invalid destinationAddress: expected Lunes SS58 address' });
           return;
         }
 
@@ -591,6 +615,16 @@ class BridgeService {
           res.status(400).json({
             error: 'Missing required fields: amount, sourceAddress, destinationAddress'
           });
+          return;
+        }
+
+        // Validate address formats
+        if (!this.isValidLunesAddress(sourceAddress)) {
+          res.status(400).json({ error: 'Invalid sourceAddress: expected Lunes SS58 address' });
+          return;
+        }
+        if (!this.isValidSolanaAddress(destinationAddress)) {
+          res.status(400).json({ error: 'Invalid destinationAddress: expected Solana base58 public key' });
           return;
         }
 
@@ -944,11 +978,25 @@ class BridgeService {
           this.database
         );
 
+        // Wire VaultExecutor for multisig mode when REQUIRE_MULTISIG_VAULT=true
+        if (config.REQUIRE_MULTISIG_VAULT) {
+          try {
+            this.vaultExecutor = this.createVaultExecutor();
+            this.vaultExecutor.start();
+            logger.info('🏦 VaultExecutor started — multisig mode active');
+          } catch (error) {
+            const message = error instanceof Error ? error.message : String(error);
+            logger.error('❌ VaultExecutor initialization failed, falling back to single-signer', { error: message });
+            this.startupErrors.push(`vaultExecutor: ${message}`);
+          }
+        }
+
         this.bridgeProcessor = new BridgeProcessor(
           this.solanaClient,
           this.lunesClient,
           this.database,
-          this.monitoring
+          this.monitoring,
+          this.vaultExecutor
         );
 
         await this.bridgeProcessor.start();
@@ -988,6 +1036,9 @@ class BridgeService {
       if (this.bridgeProcessor) {
         await this.bridgeProcessor.stop();
       }
+      if (this.vaultExecutor) {
+        this.vaultExecutor.stop();
+      }
       if (this.feeCollector) {
         this.feeCollector.pause(); // Pause fee collection on shutdown
       }
@@ -999,6 +1050,103 @@ class BridgeService {
     } catch (error) {
       logger.error('❌ Error during shutdown', { error: error instanceof Error ? error.message : String(error) });
       process.exit(1);
+    }
+  }
+
+  /**
+   * Build and return a VaultExecutor wired to the current clients.
+   * Uses LocalSigner in development (all bots share the bridge key).
+   * In production, each bot should have its own HSM key via createSigner().
+   */
+  private createVaultExecutor(): VaultExecutor {
+    if (!this.solanaClient) throw new Error('SolanaClient not initialized');
+    if (!this.database) throw new Error('Database not initialized');
+
+    const connection = (this.solanaClient as any).connection;
+    if (!connection) throw new Error('SolanaClient has no .connection property');
+
+    const usdtMint = new PublicKey(config.USDT_TOKEN_MINT);
+
+    // Signer factory: local key in dev, HSM in staging/production
+    const makeSigner = (keyEnvVar: string) => {
+      const hsmType = config.HSM_TYPE;
+      if (hsmType === 'aws_kms' && config.AWS_KMS_KEY_ID) {
+        return createSigner({ type: 'aws_kms', awsKmsKeyId: config.AWS_KMS_KEY_ID, awsRegion: config.AWS_REGION });
+      }
+      if (hsmType === 'hashicorp_vault' && config.VAULT_URL && config.VAULT_TOKEN && config.VAULT_KEY_PATH) {
+        return createSigner({ type: 'hashicorp_vault', vaultUrl: config.VAULT_URL, vaultToken: config.VAULT_TOKEN, vaultKeyPath: config.VAULT_KEY_PATH });
+      }
+      // Fall back to LocalSigner for development
+      const privateKey = process.env[keyEnvVar] || config.SOLANA_WALLET_PRIVATE_KEY;
+      if (!privateKey) throw new Error(`Missing private key for signer (env var: ${keyEnvVar})`);
+      return new LocalSigner(privateKey);
+    };
+
+    const mainSigner = makeSigner('SOLANA_WALLET_PRIVATE_KEY');
+    const botOriginSigner = makeSigner('BOT_ORIGIN_PRIVATE_KEY');
+    const botRiskSigner = makeSigner('BOT_RISK_PRIVATE_KEY');
+    const botBackupSigner = makeSigner('BOT_BACKUP_PRIVATE_KEY');
+
+    // Deps closures — wired to live clients
+    const db = this.database;
+    const solana = this.solanaClient;
+
+    return new VaultExecutor({
+      connection,
+      usdtMint,
+      signer: mainSigner,
+      botSigners: { origin: botOriginSigner, risk: botRiskSigner, backup: botBackupSigner },
+      originDeps: {
+        isSourceTransactionFinalized: (sig) => solana.isTransactionConfirmed(sig),
+        getSourceTransactionAmount: async (_sig) => null, // not yet queried from chain
+      },
+      riskDeps: {
+        getRecentProposalCount: (_windowMinutes) => 0, // in-memory, reset on restart
+        getRecipientHistory: (_recipient) => ({ totalSent: 0, txCount: 0 }),
+        getVaultBalance: () => solana.getUSDTBalance(),
+      },
+      backupDeps: {
+        isBridgeServiceHealthy: async () => true,
+        isDatabaseReachable: () => db.getStatistics().then(() => true).catch(() => false),
+        getProposalFromDatabase: (bridgeTxId) =>
+          db.getTransaction(bridgeTxId).then(tx => tx ? { amount: tx.amount, status: tx.status } : null),
+      },
+      policy: {
+        singleTxLimit: config.HOT_WALLET_SINGLE_TX_LIMIT,
+        dailyLimit: config.HOT_WALLET_DAILY_LIMIT,
+        highValueThreshold: config.MULTISIG_HIGH_VALUE_THRESHOLD,
+        timelockDurationMs: config.MULTISIG_TIMELOCK_MS,
+        proposalTtlMs: config.MULTISIG_PROPOSAL_TTL_MS,
+      },
+      requiredApprovals: config.MULTISIG_REQUIRED_APPROVALS,
+      totalBots: config.MULTISIG_TOTAL_BOTS,
+    });
+  }
+
+  /**
+   * Validates a Solana base58 public key.
+   */
+  private isValidSolanaAddress(address: string): boolean {
+    try {
+      if (!address || typeof address !== 'string') return false;
+      const pubkey = new PublicKey(address);
+      return PublicKey.isOnCurve(pubkey.toBytes());
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Validates a Lunes/Substrate SS58 address (47-48 base58 chars, starts with '5').
+   */
+  private isValidLunesAddress(address: string): boolean {
+    try {
+      if (!address || typeof address !== 'string') return false;
+      if (address.length < 47 || address.length > 48) return false;
+      const base58Chars = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+      return address.split('').every(c => base58Chars.includes(c));
+    } catch {
+      return false;
     }
   }
 

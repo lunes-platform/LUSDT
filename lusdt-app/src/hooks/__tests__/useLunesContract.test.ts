@@ -1,6 +1,31 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { renderHook, act, waitFor } from '@testing-library/react'
+import { renderHook, act } from '@testing-library/react'
 import { useLunesContract } from '../useLunesContract'
+
+// Mock @polkadot/api — previne conexões WebSocket reais em testes
+// ApiPromise.create retorna uma Promise pendente para manter o hook em estado
+// isConnecting: true sem nunca resolver, testando comportamento de "não inicializado"
+vi.mock('@polkadot/api', () => {
+  const WsProvider = vi.fn().mockImplementation(function () {
+    return { on: vi.fn(), disconnect: vi.fn(), isConnected: false }
+  })
+  return {
+    ApiPromise: { create: vi.fn().mockReturnValue(new Promise(() => {})) },
+    WsProvider,
+  }
+})
+
+vi.mock('@polkadot/api-contract', () => ({
+  ContractPromise: vi.fn().mockImplementation(function () {
+    return { query: {}, tx: {} }
+  }),
+}))
+
+vi.mock('@polkadot/extension-dapp', () => ({
+  web3Enable: vi.fn().mockResolvedValue([]),
+  web3Accounts: vi.fn().mockResolvedValue([]),
+  web3FromSource: vi.fn().mockResolvedValue({ signer: {} }),
+}))
 
 // Mock do useWallet
 vi.mock('../../components/WalletProvider', () => ({

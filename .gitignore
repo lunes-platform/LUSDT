@@ -35,3 +35,7 @@ yarn-error.log*
 # Logs
 *.log
 logs/
+
+# Solana keypairs (never commit)
+solana-keys/
+**/solana-keys/

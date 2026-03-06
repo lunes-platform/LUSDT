@@ -37,9 +37,9 @@ VAULT_KEY_NAME=solana-bridge
 
 # Multisig policy
 REQUIRE_MULTISIG_VAULT=true
-BOT_ORIGIN_SECRET=replace_origin_secret
-BOT_RISK_SECRET=replace_risk_secret
-BOT_BACKUP_SECRET=replace_backup_secret
+BOT_ORIGIN_KEY_ID=replace_origin_key_id
+BOT_RISK_KEY_ID=replace_risk_key_id
+BOT_BACKUP_KEY_ID=replace_backup_key_id
 MULTISIG_REQUIRED_APPROVALS=2
 MULTISIG_TOTAL_BOTS=3
 MULTISIG_HIGH_VALUE_THRESHOLD=5000

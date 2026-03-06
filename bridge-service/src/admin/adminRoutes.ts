@@ -61,26 +61,28 @@ export class AdminRoutes {
   }
 
   /**
-   * Verify admin permissions - PRODUÇÃO
-   * Verifica se o endereço é o OWNER real do contrato
-   * Em produção, consulta o contrato LUSDT on-chain
+   * Verify admin permissions — checks against LUSDT_OWNER_ADDRESS env var.
+   * If not configured, blocks all admin mutations for safety.
+   * Future: replace with on-chain owner query via @polkadot/api-contract.
    */
   private verifyAdmin(adminAddress: string): boolean {
-    // PRODUÇÃO: Verificar contra o contrato real
-    // Integração com API Polkadot.js para consultar owner do contrato LUSDT
-    
     if (!adminAddress || adminAddress.length !== 48) {
-      logger.warn('Tentativa de acesso admin com endereço inválido', { adminAddress });
+      logger.warn('Admin access denied: invalid address format', { adminAddress });
       return false;
     }
-    
-    // TODO: Implementar consulta real ao contrato
-    // const contractOwner = await this.lusdtContract.query.getOwner();
-    // return adminAddress === contractOwner;
-    
-    // Por segurança, retornar false até integração completa
-    logger.warn('Verificação de OWNER requer integração com contrato on-chain', { adminAddress });
-    return false;
+
+    const configuredOwner = process.env.LUSDT_OWNER_ADDRESS || '';
+    if (!configuredOwner) {
+      logger.warn('Admin access denied: LUSDT_OWNER_ADDRESS not configured', { adminAddress });
+      return false;
+    }
+
+    if (adminAddress !== configuredOwner) {
+      logger.warn('Admin access denied: address not owner', { adminAddress });
+      return false;
+    }
+
+    return true;
   }
 
   private setupRoutes(): void {

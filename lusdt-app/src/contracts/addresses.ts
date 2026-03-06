@@ -7,14 +7,16 @@ export const CONTRACT_ADDRESSES = {
   lunes: {
     lusdtToken: USE_LOCAL_NODE
       ? (import.meta.env.VITE_LOCAL_LUSDT_ADDRESS || '5FF6tj1Y5TvpcSDfmTaBMw9bHLRaxx3yrVxCS9eGHL8dBxAm')
-      : '5Gbyik8Ciu86LN8cL7s4S4AS7jEi8LhpvcuZ1KZHVq1Gsiry',
+      : (import.meta.env.VITE_MAINNET_LUSDT_ADDRESS || ''),   // Must be set via VITE_MAINNET_LUSDT_ADDRESS
     taxManager: USE_LOCAL_NODE
       ? (import.meta.env.VITE_LOCAL_TAX_MANAGER_ADDRESS || '5EcMre9JQqicWazCQ1EqxxQ4NGfnAXysW42Tae7RVhv7AfmE')
-      : '5Gbyik8Ciu86LN8cL7s4S4AS7jEi8LhpvcuZ1KZHVq1Gsiry',
-    lunesToken: '5Gbyik8Ciu86LN8cL7s4S4AS7jEi8LhpvcuZ1KZHVq1Gsiry',
+      : (import.meta.env.VITE_MAINNET_TAX_MANAGER_ADDRESS || ''),  // Must be set via VITE_MAINNET_TAX_MANAGER_ADDRESS
+    lunesToken: USE_LOCAL_NODE
+      ? (import.meta.env.VITE_LOCAL_LUNES_TOKEN_ADDRESS || '')
+      : (import.meta.env.VITE_MAINNET_LUNES_TOKEN_ADDRESS || ''),   // Must be set via VITE_MAINNET_LUNES_TOKEN_ADDRESS
     stakingManager: USE_LOCAL_NODE
       ? (import.meta.env.VITE_LOCAL_STAKING_MANAGER_ADDRESS || '')
-      : '',  // Set after mainnet deployment
+      : (import.meta.env.VITE_MAINNET_STAKING_MANAGER_ADDRESS || ''),  // Set after mainnet deployment
   },
 
   // Solana Network
@@ -22,9 +24,9 @@ export const CONTRACT_ADDRESSES = {
     // Mainnet: USDT oficial | Devnet: USDT de testes na devnet Solana
     usdtMint: USE_LOCAL_NODE
       ? 'Gh9ZwEmdLJ8DscKNTkTqPbNwLNNBjuSzaG9Vp2KGtKJr'  // Devnet USDT
-      : 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // Mainnet USDT
+      : 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // Mainnet USDT (official Circle USDT)
     bridgeAddress: import.meta.env.VITE_SOLANA_BRIDGE_ADDRESS || '6zZ9bP5kkSMyjvnnBzG75sYsmAwU9fat8YmXccMfVruj',
-    bridgeProgram: 'BridgeProgramIdHere', // Não necessário: bridge é off-chain
+    bridgeProgram: '', // Bridge é off-chain — nenhum programa on-chain necessário
   }
 };
 

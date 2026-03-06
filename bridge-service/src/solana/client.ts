@@ -12,15 +12,17 @@ export interface SolanaTransfer {
 }
 
 export class SolanaClient {
-  private connection: Connection;
+  private connections: Connection[];
+  private currentConnectionIndex = 0;
   private keypair: Keypair;
   private usdtMint: PublicKey;
   private multisigVault?: PublicKey;
   private dailySpent: number = 0;
   private dailyResetTime: number = Date.now();
 
-  constructor(rpcUrl: string, privateKey: string) {
-    this.connection = new Connection(rpcUrl, 'finalized');
+  constructor(rpcUrls: string | string[], privateKey: string) {
+    const urls = Array.isArray(rpcUrls) ? rpcUrls : rpcUrls.split(',').map(u => u.trim());
+    this.connections = urls.map(url => new Connection(url, 'finalized'));
 
     // Suporta ambos os formatos: JSON array [1,2,3,...] e Base58 string
     const trimmedKey = privateKey.trim();
@@ -33,16 +35,41 @@ export class SolanaClient {
     this.usdtMint = new PublicKey(config.USDT_TOKEN_MINT);
   }
 
+  private get connection(): Connection {
+    return this.connections[this.currentConnectionIndex];
+  }
+
+  private async withConnection<T>(fn: (conn: Connection) => Promise<T>): Promise<T> {
+    let lastError: any;
+    for (let attempts = 0; attempts < this.connections.length; attempts++) {
+      try {
+        return await fn(this.connection);
+      } catch (error) {
+        lastError = error;
+        logger.warn('⚠️ Solana RPC error, rotating endpoint...', {
+          endpoint: this.connection.rpcEndpoint,
+          error: lastError instanceof Error ? lastError.message : String(lastError)
+        });
+        if (this.connections.length > 1) {
+          this.currentConnectionIndex = (this.currentConnectionIndex + 1) % this.connections.length;
+        } else {
+          break;
+        }
+      }
+    }
+    throw lastError;
+  }
+
   async initialize(): Promise<void> {
     try {
       logger.info('🔗 Initializing Solana client...');
 
       // Verifica conexão
-      const version = await this.connection.getVersion();
-      logger.info('✅ Connected to Solana', { version });
+      const version = await this.withConnection(c => c.getVersion());
+      logger.info('✅ Connected to Solana', { version, endpoint: this.connection.rpcEndpoint });
 
       // Verifica saldo
-      const balance = await this.connection.getBalance(this.keypair.publicKey);
+      const balance = await this.withConnection(c => c.getBalance(this.keypair.publicKey));
       logger.info('💰 Solana wallet balance', {
         wallet: this.keypair.publicKey.toString(),
         balance: balance / 1e9
@@ -71,7 +98,7 @@ export class SolanaClient {
         wallet
       );
 
-      const balance = await this.connection.getTokenAccountBalance(associatedAddress);
+      const balance = await this.withConnection(c => c.getTokenAccountBalance(associatedAddress));
       return balance.value.uiAmount || 0;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -83,7 +110,7 @@ export class SolanaClient {
   async getSolBalance(address?: string): Promise<number> {
     try {
       const wallet = address ? new PublicKey(address) : this.keypair.publicKey;
-      const lamports = await this.connection.getBalance(wallet);
+      const lamports = await this.withConnection(c => c.getBalance(wallet));
       return lamports / 1e9;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -166,12 +193,12 @@ export class SolanaClient {
 
       const transaction = new Transaction().add(instruction);
 
-      const signature = await sendAndConfirmTransaction(
-        this.connection,
+      const signature = await this.withConnection(c => sendAndConfirmTransaction(
+        c,
         transaction,
         [this.keypair],
         { commitment: 'finalized' }
-      );
+      ));
 
       this.dailySpent += amount;
       logger.info('✅ USDT transfer completed', { signature, recipient, amount, dailySpent: this.dailySpent });
@@ -198,11 +225,11 @@ export class SolanaClient {
     // Polling approach: check for new token transactions every 5 seconds
     const poll = async () => {
       try {
-        const signatures = await this.connection.getSignaturesForAddress(
+        const signatures = await this.withConnection(c => c.getSignaturesForAddress(
           ourTokenAccount,
           { limit: 10, before: undefined, until: lastSignature },
           'finalized'
-        );
+        ));
 
         if (signatures.length === 0) return;
 
@@ -211,10 +238,10 @@ export class SolanaClient {
 
         for (const sig of signatures.reverse()) {
           try {
-            const tx = await this.connection.getParsedTransaction(sig.signature, {
+            const tx = await this.withConnection(c => c.getParsedTransaction(sig.signature, {
               commitment: 'finalized',
               maxSupportedTransactionVersion: 0
-            });
+            }));
 
             if (!tx?.meta || tx.meta.err) continue;
 
@@ -271,7 +298,7 @@ export class SolanaClient {
     };
 
     // Initialize lastSignature with current latest
-    const initial = await this.connection.getSignaturesForAddress(ourTokenAccount, { limit: 1 }, 'finalized');
+    const initial = await this.withConnection(c => c.getSignaturesForAddress(ourTokenAccount, { limit: 1 }, 'finalized'));
     if (initial.length > 0) {
       lastSignature = initial[0].signature;
       logger.info('📍 USDT watcher initialized', { lastSignature });
@@ -283,10 +310,10 @@ export class SolanaClient {
 
   async getTransactionDetails(signature: string): Promise<any> {
     try {
-      const transaction = await this.connection.getTransaction(signature, {
+      const transaction = await this.withConnection(c => c.getTransaction(signature, {
         commitment: 'finalized',
         maxSupportedTransactionVersion: 0
-      });
+      }));
       return transaction;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -297,10 +324,10 @@ export class SolanaClient {
 
   async getRecentTransactions(limit: number = 100): Promise<any[]> {
     try {
-      const signatures = await this.connection.getSignaturesForAddress(
+      const signatures = await this.withConnection(c => c.getSignaturesForAddress(
         this.keypair.publicKey,
         { limit }
-      );
+      ));
 
       const transactions = [];
       for (const sig of signatures) {
@@ -322,7 +349,7 @@ export class SolanaClient {
 
   async isTransactionConfirmed(signature: string): Promise<boolean> {
     try {
-      const status = await this.connection.getSignatureStatus(signature);
+      const status = await this.withConnection(c => c.getSignatureStatus(signature));
       return status.value?.confirmationStatus === 'finalized';
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -337,11 +364,11 @@ export class SolanaClient {
 
   async getNetworkInfo(): Promise<any> {
     try {
-      const [epochInfo, blockHeight, version] = await Promise.all([
-        this.connection.getEpochInfo(),
-        this.connection.getBlockHeight(),
-        this.connection.getVersion()
-      ]);
+      const [epochInfo, blockHeight, version] = await this.withConnection(c => Promise.all([
+        c.getEpochInfo(),
+        c.getBlockHeight(),
+        c.getVersion()
+      ]));
 
       return {
         epochInfo,
