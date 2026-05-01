@@ -1,48 +1,123 @@
-name: Deploy on Prod
+name: CI / Deploy to Production
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
+  # ── Test ─────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bridge-service
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: bridge-service/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Run tests
+        run: npm test
+        env:
+          NODE_ENV: test
+
+  # ── Build ─────────────────────────────────────────────────────
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: bridge-service/package-lock.json
+
+      - name: Install dependencies
+        working-directory: bridge-service
+        run: npm ci
+
+      - name: Build TypeScript
+        working-directory: bridge-service
+        run: npm run build
+        env:
+          NODE_ENV: production
+
+  # ── Deploy ────────────────────────────────────────────────────
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v2
-    - name: copy files
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USER }}
-        password: ${{ secrets.PASSWORD }}
-        port: ${{ secrets.PORT }}
-        source: "."
-        target: /root/lusdt-bridge
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
-    - name: SSH into remote server and run commands
-      uses: appleboy/ssh-action@v1.2.0
-      with:
-        host: ${{ secrets.HOST }}
-        username: ${{ secrets.USER }}
-        port: ${{ secrets.PORT }}
-        password: ${{ secrets.PASSWORD }}
-        key: ${{ secrets.SSH_PRIVATE_KEY }}
-        script: |
-          export NVM_DIR=~/.nvm
-          source ~/.nvm/nvm.sh
-          TARGET_DIR=/root/lusdt-bridge
-          cd $TARGET_DIR
-          ls $TARGET_DIR          
-          PM2_NAME="lusdt-bridge"
-          echo "Configuring PM2"
-          cd $TARGET_DIR/lusdt-app
-          pm2 stop $PM2_NAME || true
-          pm2 delete $PM2_NAME || true
-          echo "pm2 $PM2_NAME e $TARGET_DIR"
-          echo "Deploying"
-          npm install --force or --legacy-peer-deps
-          pm2 start "npm run dev" --name $PM2_NAME
-          pm2 save          
-          echo "Finished"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy files to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.PORT }}
+          source: "bridge-service/"
+          target: /opt/lusdt-bridge
+
+      - name: Deploy bridge-service on server
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.HOST }}
+          username: ${{ secrets.USER }}
+          port: ${{ secrets.PORT }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            set -e
+            export NVM_DIR=~/.nvm
+            source ~/.nvm/nvm.sh
+
+            TARGET=/opt/lusdt-bridge/bridge-service
+            cd "$TARGET"
+
+            echo "Installing production dependencies..."
+            npm ci --omit=dev
+
+            echo "Building TypeScript..."
+            NODE_ENV=production npm run build
+
+            PM2_NAME="lusdt-bridge"
+            echo "Restarting PM2 process: $PM2_NAME"
+            pm2 stop "$PM2_NAME" || true
+            pm2 delete "$PM2_NAME" || true
+            NODE_ENV=production pm2 start dist/index.js --name "$PM2_NAME" \
+              --max-memory-restart 512M \
+              --no-autorestart false
+
+            pm2 save
+            echo "Deploy finished. Waiting for health check..."
+            sleep 5
+            curl --fail http://localhost:3000/health || (echo "Health check failed!" && exit 1)

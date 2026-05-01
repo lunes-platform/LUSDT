@@ -114,7 +114,7 @@ export function TransparencyPage({ onNavigate }: TransparencyPageProps) {
               name: 'BRIDGE_VAULT_SOL',
               address: reserves.reserves.solanaWallet || 'N/A',
               usdtBalance: totalReservesNum.toLocaleString('en-US', { minimumFractionDigits: 2 }),
-              totalDeposits: stats ? stats.totalVolumeUSDT.toLocaleString('en-US') : '0',
+              totalDeposits: stats ? (stats.totalVolume ?? '0') : '0',
               lastDeposit: stats ? stats.lastProcessed : new Date().toISOString(),
               status: 'active'
             }
@@ -127,7 +127,7 @@ export function TransparencyPage({ onNavigate }: TransparencyPageProps) {
             .filter(tx => tx.sourceChain === 'solana' && tx.status === 'completed')
             .slice(0, 10)
             .map(tx => ({
-              txHash: tx.sourceSignature,
+              txHash: (tx as any).sourceSignature ?? tx.txHash ?? '',
               amount: tx.amount.toLocaleString('en-US', { minimumFractionDigits: 2 }),
               timestamp: tx.createdAt,
               fromAddress: tx.sourceAddress,

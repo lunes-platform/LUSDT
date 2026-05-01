@@ -11,8 +11,8 @@ WORKDIR /app
 COPY package*.json ./
 COPY tsconfig.json ./
 
-# Instala dependências
-RUN npm ci --only=production && npm cache clean --force
+# Instala todas as dependências (incluindo devDeps para compilar TypeScript)
+RUN npm ci && npm cache clean --force
 
 # Copia código fonte
 COPY src/ ./src/
@@ -22,6 +22,10 @@ RUN npm run build
 
 # Estágio de produção
 FROM node:18-alpine AS production
+
+# Set production environment — must be baked in so it is never overridden to
+# 'development' by a missing runtime variable.
+ENV NODE_ENV=production
 
 # Instala dependências do sistema para produção
 RUN apk add --no-cache dumb-init

@@ -23,11 +23,13 @@ export function BalanceCard() {
     lusdt: '0'
   })
   const [loading, setLoading] = useState(false)
+  const [fetchError, setFetchError] = useState<string | null>(null)
 
   const refetch = async () => {
     if (!solanaWallet && !lunesWallet) return
 
     setLoading(true)
+    setFetchError(null)
     try {
       const newBalances: Balances = {
         sol: '0',
@@ -59,6 +61,7 @@ export function BalanceCard() {
       setBalances(newBalances)
     } catch (error) {
       console.error('Erro ao buscar saldos:', error)
+      setFetchError('Failed to fetch balances. Retry.')
     } finally {
       setLoading(false)
     }
@@ -84,14 +87,22 @@ export function BalanceCard() {
           <span>// ASSET_HOLDINGS</span>
         </h3>
         <button
+          type="button"
           onClick={refetch}
           disabled={loading}
+          aria-label="Refresh balances"
           className="self-start sm:self-auto p-1.5 hover:bg-zinc-800 rounded-sm transition-all duration-200 text-zinc-400 hover:text-green-500 border border-transparent hover:border-zinc-700"
           title="SYNC_BALANCES"
         >
           <RefreshCw size={14} className={`transition-transform ${loading ? 'animate-spin' : 'hover:rotate-180'}`} />
         </button>
       </div>
+
+      {fetchError && (
+        <div role="alert" className="mb-4 relative z-10 text-[10px] font-mono text-red-400 border border-red-900/50 bg-red-950/10 px-3 py-2 rounded-sm">
+          {fetchError}
+        </div>
+      )}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 relative z-10">
         {/* Solana Balances */}

@@ -319,6 +319,8 @@ export function BridgeInterface() {
           {/* Direction Selector - Cyberpunk Tabs */}
           <div className="grid grid-cols-2 gap-2 p-1 bg-black/50 border border-white/5 rounded-md relative overflow-hidden">
             <button
+              type="button"
+              aria-pressed={direction === 'solana-to-lunes'}
               onClick={() => direction !== 'solana-to-lunes' && switchDirection()}
               className={`py-3 px-4 text-xs font-bold tracking-wider transition-all duration-300 relative flex items-center justify-center gap-2 ${direction === 'solana-to-lunes' ? 'bg-zinc-900 border border-green-500/30 text-green-400 shadow-[0_0_20px_-5px_rgba(34,197,94,0.1)]' : 'text-zinc-600 hover:text-zinc-400'}`}
             >
@@ -326,6 +328,8 @@ export function BridgeInterface() {
               SOLANA_NET
             </button>
             <button
+              type="button"
+              aria-pressed={direction === 'lunes-to-solana'}
               onClick={() => direction !== 'lunes-to-solana' && switchDirection()}
               className={`py-3 px-4 text-xs font-bold tracking-wider transition-all duration-300 relative flex items-center justify-center gap-2 ${direction === 'lunes-to-solana' ? 'bg-zinc-900 border border-blue-500/30 text-blue-400 shadow-[0_0_20px_-5px_rgba(59,130,246,0.1)]' : 'text-zinc-600 hover:text-zinc-400'}`}
             >
@@ -363,9 +367,10 @@ export function BridgeInterface() {
           <div className="relative group">
             <div className={`absolute -inset-0.5 bg-gradient-to-r ${amount && !validateAmount(amount) ? 'from-green-500/50 to-emerald-500/50' : 'from-red-500/0 to-red-500/0'} rounded blur opacity-20 transition duration-500`}></div>
             <div className="relative">
-              <label className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block">Quantized Amount</label>
+              <label htmlFor="bridge-amount" className="text-[10px] text-zinc-500 uppercase tracking-widest mb-2 block">Quantized Amount</label>
               <div className="flex items-center border-b-2 border-zinc-800 focus-within:border-green-500/50 transition-colors bg-black/20">
                 <input
+                  id="bridge-amount"
                   type="text"
                   value={amount}
                   onChange={(e) => {
@@ -391,7 +396,9 @@ export function BridgeInterface() {
           <div className="flex gap-2 justify-end">
             {['100', '1000', 'MAX'].map((opt) => (
               <button
+                type="button"
                 key={opt}
+                aria-label={opt === 'MAX' ? 'Set maximum amount' : `Set amount to ${opt}`}
                 onClick={() => {
                   if (opt === 'MAX') {
                     (async () => {
@@ -481,6 +488,7 @@ export function BridgeInterface() {
               </div>
               {!approvalStatus.lusdtApproved && (
                 <button
+                  type="button"
                   onClick={handleApproveLusdt}
                   disabled={approvalStatus.approving === 'lusdt'}
                   className="w-full py-3 text-xs font-bold tracking-wider rounded-sm flex items-center justify-center gap-2 transition-all bg-blue-900/30 border border-blue-500/30 text-blue-400 hover:bg-blue-900/50"
@@ -494,6 +502,7 @@ export function BridgeInterface() {
               )}
               {!approvalStatus.lunesApproved && (
                 <button
+                  type="button"
                   onClick={handleApproveLunes}
                   disabled={approvalStatus.approving === 'lunes'}
                   className="w-full py-3 text-xs font-bold tracking-wider rounded-sm flex items-center justify-center gap-2 transition-all bg-purple-900/30 border border-purple-500/30 text-purple-400 hover:bg-purple-900/50"
@@ -510,6 +519,7 @@ export function BridgeInterface() {
 
           {/* Action Button */}
           <button
+            type="button"
             onClick={handleBridge}
             disabled={!canBridge || needsApproval}
             className={`w-full py-4 text-sm font-bold tracking-wider rounded-sm flex items-center justify-center gap-2 transition-all ${canBridge && !needsApproval

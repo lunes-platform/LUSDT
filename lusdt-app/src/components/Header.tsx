@@ -44,6 +44,7 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
     const isActive = currentPage === page
     return (
       <button
+        type="button"
         onClick={() => {
           if (onNavigate) onNavigate(page)
           if (mobile) setIsMobileMenuOpen(false)
@@ -94,6 +95,8 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
                     SOL
                   </span>
                   <button
+                    type="button"
+                    aria-label="Disconnect Solana wallet"
                     onClick={() => disconnect('solana')}
                     className="text-zinc-500 hover:text-red-500 ml-2 transition-colors"
                   >
@@ -102,6 +105,7 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={connectSolana}
                   disabled={isConnecting}
                   className="flex items-center space-x-2 bg-zinc-900 text-zinc-400 border border-zinc-700 px-3 py-2 rounded-sm hover:text-green-400 hover:border-green-500 transition-all font-mono text-xs uppercase"
@@ -125,6 +129,8 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
                     LUNES
                   </span>
                   <button
+                    type="button"
+                    aria-label="Disconnect Lunes wallet"
                     onClick={() => disconnect('lunes')}
                     className="text-zinc-500 hover:text-red-500 ml-2 transition-colors"
                   >
@@ -133,6 +139,7 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
                 </div>
               ) : (
                 <button
+                  type="button"
                   onClick={connectLunes}
                   disabled={isConnecting}
                   className="flex items-center space-x-2 bg-zinc-900 text-zinc-400 border border-zinc-700 px-3 py-2 rounded-sm hover:text-green-400 hover:border-green-500 transition-all font-mono text-xs uppercase"
@@ -155,6 +162,9 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
 
           {/* Mobile Menu Button */}
           <button
+            type="button"
+            aria-label={isMobileMenuOpen ? 'Close menu' : 'Open menu'}
+            aria-expanded={isMobileMenuOpen}
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden p-2 rounded-sm border border-zinc-800 hover:bg-zinc-900 text-zinc-400 hover:text-green-500 transition-colors"
           >
@@ -177,11 +187,11 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
                       <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
                       <span className="text-xs text-zinc-300 font-mono">{formatAddress(solanaWallet.address)}</span>
                     </div>
-                    <button onClick={() => disconnect('solana')}><LogOut size={12} className="text-red-500" /></button>
+                    <button type="button" aria-label="Disconnect Solana wallet" onClick={() => disconnect('solana')}><LogOut size={12} className="text-red-500" /></button>
                   </div>
                 </div>
               ) : (
-                <button onClick={connectSolana} className="flex flex-col items-center justify-center bg-zinc-900 border border-zinc-800 p-3 rounded-sm hover:border-green-500/50 hover:text-green-500 transition-colors text-zinc-400 gap-2">
+                <button type="button" onClick={connectSolana} className="flex flex-col items-center justify-center bg-zinc-900 border border-zinc-800 p-3 rounded-sm hover:border-green-500/50 hover:text-green-500 transition-colors text-zinc-400 gap-2">
                   <Wallet size={16} />
                   <span className="text-xs font-mono">CONNECT SOL</span>
                 </button>
@@ -196,11 +206,11 @@ export function Header({ onNavigate, currentPage = 'bridge' }: HeaderProps) {
                       <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
                       <span className="text-xs text-zinc-300 font-mono">{formatAddress(lunesWallet.address)}</span>
                     </div>
-                    <button onClick={() => disconnect('lunes')}><LogOut size={12} className="text-red-500" /></button>
+                    <button type="button" aria-label="Disconnect Lunes wallet" onClick={() => disconnect('lunes')}><LogOut size={12} className="text-red-500" /></button>
                   </div>
                 </div>
               ) : (
-                <button onClick={connectLunes} className="flex flex-col items-center justify-center bg-zinc-900 border border-zinc-800 p-3 rounded-sm hover:border-green-500/50 hover:text-green-500 transition-colors text-zinc-400 gap-2">
+                <button type="button" onClick={connectLunes} className="flex flex-col items-center justify-center bg-zinc-900 border border-zinc-800 p-3 rounded-sm hover:border-green-500/50 hover:text-green-500 transition-colors text-zinc-400 gap-2">
                   <Wallet size={16} />
                   <span className="text-xs font-mono">CONNECT LUNES</span>
                 </button>

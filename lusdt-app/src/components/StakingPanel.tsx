@@ -257,8 +257,10 @@ export function StakingPanel() {
           </div>
 
           <button
+            type="button"
             onClick={loadData}
             disabled={loading}
+            aria-label="Refresh staking data"
             className="flex items-center gap-2 px-4 py-2 bg-zinc-950 border border-zinc-800 rounded-sm text-xs font-mono text-zinc-400 hover:text-purple-400 hover:border-purple-800/50 transition-all"
           >
             <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
@@ -322,6 +324,8 @@ export function StakingPanel() {
                   <div className="flex items-center justify-between">
                     <label className="text-[10px] font-mono text-zinc-400 uppercase">Amount to Stake</label>
                     <button
+                      type="button"
+                      aria-label="Set maximum stake amount"
                       onClick={() => setStakeAmount(Math.max(lunesBalance, STAKING_MIN_LUNES).toString())}
                       className="text-[10px] font-mono text-purple-400 hover:text-purple-300"
                     >

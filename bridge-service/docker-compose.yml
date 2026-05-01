@@ -9,10 +9,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NODE_ENV=development
+      # NODE_ENV is baked into the image as 'production'.
+      # Override here only for local dev: NODE_ENV=development
+      - PORT=3000
       - DATABASE_URL=postgresql://bridge_user:bridge_password@postgres:5432/bridge_db
       - REDIS_URL=redis://redis:6379
-      - LOG_LEVEL=debug
     env_file:
       - .env
     depends_on:
@@ -86,7 +87,7 @@ services:
     ports:
       - "3001:3000"
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-lusdt_grafana_2024}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:?Set GRAFANA_ADMIN_PASSWORD in .env}
     volumes:
       - grafana_data:/var/lib/grafana
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
