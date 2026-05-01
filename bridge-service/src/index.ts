@@ -429,7 +429,11 @@ class BridgeService {
         }
 
         const solanaAddress = this.solanaClient ? this.solanaClient.getPublicKey() : '';
-        
+
+        const [liveFeeBps] = await Promise.all([
+          this.lunesClient ? this.lunesClient.queryTaxManagerFeeBps() : Promise.resolve(60),
+        ]);
+
         res.json({
           solanaBridgeAddress: solanaAddress,
           lunesContractAddress: config.LUSDT_CONTRACT_ADDRESS,
@@ -437,7 +441,74 @@ class BridgeService {
             minAmount: 1,
             maxAmount: config.MAX_TRANSACTION_VALUE
           },
+          feeBps: {
+            low: liveFeeBps,
+            medium: liveFeeBps,
+            high: liveFeeBps,
+          },
+          volumeThresholds: {
+            low: 10000,
+            medium: 100000,
+          },
+          feeCaps: {
+            small: 0.5,
+            medium: 2,
+            large: 10,
+            veryLarge: 50,
+          },
+          feeDistribution: {
+            dev: 80,
+            insuranceFund: 15,
+            stakingRewards: 5,
+          },
           status: this.monitoring ? 'active' : 'degraded'
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        res.status(500).json({ error: message });
+      }
+    });
+
+    // Volume info: monthly volume, tier, and next tier threshold
+    this.app.get('/bridge/volume-info', async (req, res) => {
+      try {
+        const [monthlyVolumeUsd, feeBps] = await Promise.all([
+          this.lunesClient ? this.lunesClient.queryMonthlyVolumeUsd() : Promise.resolve(0),
+          this.lunesClient ? this.lunesClient.queryTaxManagerFeeBps() : Promise.resolve(60),
+        ]);
+
+        const LOW_THRESHOLD = 10000;
+        const MEDIUM_THRESHOLD = 100000;
+
+        let tier: 'low' | 'medium' | 'high';
+        let progress: number;
+        let nextThreshold: number | null;
+        let nextFeeBps: number | null;
+
+        if (monthlyVolumeUsd <= LOW_THRESHOLD) {
+          tier = 'low';
+          progress = (monthlyVolumeUsd / LOW_THRESHOLD) * 100;
+          nextThreshold = LOW_THRESHOLD;
+          nextFeeBps = null; // will be returned from the contract
+        } else if (monthlyVolumeUsd <= MEDIUM_THRESHOLD) {
+          tier = 'medium';
+          progress = ((monthlyVolumeUsd - LOW_THRESHOLD) / (MEDIUM_THRESHOLD - LOW_THRESHOLD)) * 100;
+          nextThreshold = MEDIUM_THRESHOLD;
+          nextFeeBps = null;
+        } else {
+          tier = 'high';
+          progress = 100;
+          nextThreshold = null;
+          nextFeeBps = null;
+        }
+
+        res.json({
+          monthlyVolumeUsd,
+          tier,
+          currentFeeBps: feeBps,
+          progress: Math.min(progress, 100),
+          nextThreshold,
+          volumeThresholds: { low: LOW_THRESHOLD, medium: MEDIUM_THRESHOLD },
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
@@ -504,11 +575,18 @@ class BridgeService {
           return;
         }
 
-        // Query live fee rate and LUNES price from Tax Manager; fall back to defaults
-        const [liveFeeBps, liveLunesPrice] = await Promise.all([
+        // Query live fee rate, LUNES price, and monthly volume from Tax Manager; fall back to defaults
+        const [liveFeeBps, liveLunesPrice, monthlyVolumeUsd] = await Promise.all([
           this.lunesClient ? this.lunesClient.queryTaxManagerFeeBps() : Promise.resolve(60),
           this.lunesClient ? this.lunesClient.queryLunesPrice() : Promise.resolve(0.50),
+          this.lunesClient ? this.lunesClient.queryMonthlyVolumeUsd() : Promise.resolve(0),
         ]);
+
+        const LOW_THRESHOLD = 10000;
+        const MEDIUM_THRESHOLD = 100000;
+        const volumeTier: 'low' | 'medium' | 'high' =
+          monthlyVolumeUsd <= LOW_THRESHOLD ? 'low' :
+          monthlyVolumeUsd <= MEDIUM_THRESHOLD ? 'medium' : 'high';
 
         const optimalFeeType = feeType || this.determineOptimalFeeType(parsedAmount, sourceChain);
         const fee = this.calculateFee(parsedAmount, optimalFeeType, liveFeeBps, liveLunesPrice);
@@ -519,6 +597,8 @@ class BridgeService {
           // v3 dual-fee model
           feeModel: 'dual',
           feeType: optimalFeeType,
+          volumeTier,
+          monthlyVolumeUsd,
           // Stablecoin fee (revenue: 80% dev / 15% insurance / 5% staking)
           stablecoinFee: parseFloat(fee.amount.toFixed(6)),
           stablecoinCurrency: fee.currency,
@@ -534,6 +614,7 @@ class BridgeService {
           feeAmount: fee.amount,
           feeCurrency: fee.currency,
           feePercentage: parseFloat(stablecoinFeePercentage.toFixed(2)),
+          feePercentBps: liveFeeBps,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

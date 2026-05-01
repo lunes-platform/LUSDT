@@ -1,42 +1,38 @@
 import { useState, useEffect } from 'react'
-import { useLunesContract } from '../hooks/useLunesContract'
+import { useBridgeAPI, VolumeInfoResponse } from '../api/bridgeClient'
 import { TrendingUp, Info, Activity } from 'lucide-react'
 import { cn } from '../utils/cn'
 
 export function VolumeInfo() {
-  const { getMonthlyVolume } = useLunesContract()
-  const [volume, setVolume] = useState('0')
+  const { client: bridgeAPI } = useBridgeAPI()
+  const [volumeInfo, setVolumeInfo] = useState<VolumeInfoResponse | null>(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
-    const fetchVolume = async () => {
+    const fetchVolumeInfo = async () => {
       setLoading(true)
       try {
-        const vol = await getMonthlyVolume()
-        setVolume(vol)
+        const info = await bridgeAPI.getVolumeInfo()
+        setVolumeInfo(info)
       } catch (error) {
-        console.error('Erro ao buscar volume:', error)
+        console.error('Erro ao buscar volume info:', error)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchVolume()
-  }, [getMonthlyVolume])
+    fetchVolumeInfo()
+  }, [bridgeAPI])
 
-  const volumeUsd = parseFloat(volume) / 1000000 // Converter para USD
+  const tier = volumeInfo ? {
+    name: volumeInfo.tier === 'high' ? 'VIP' : volumeInfo.tier === 'medium' ? 'PREMIUM' : 'STANDARD',
+    fee: `${(volumeInfo.currentFeeBps / 100).toFixed(2)}%`,
+    progress: volumeInfo.progress,
+    level: volumeInfo.tier === 'high' ? 3 : volumeInfo.tier === 'medium' ? 2 : 1,
+  } : { name: 'STANDARD', fee: '0.60%', progress: 0, level: 1 }
 
-  const getTier = () => {
-    if (volumeUsd <= 10000) {
-      return { name: 'STANDARD', fee: '0.6%', progress: (volumeUsd / 10000) * 100, level: 1 }
-    } else if (volumeUsd <= 100000) {
-      return { name: 'PREMIUM', fee: '0.5%', progress: ((volumeUsd - 10000) / 90000) * 100, level: 2 }
-    } else {
-      return { name: 'VIP', fee: '0.3%', progress: 100, level: 3 }
-    }
-  }
-
-  const tier = getTier()
+  const volumeUsd = volumeInfo?.monthlyVolumeUsd ?? 0
+  const thresholds = volumeInfo?.volumeThresholds ?? { low: 10000, medium: 100000 }
 
   return (
     <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-sm relative overflow-hidden flex flex-col justify-between">
@@ -89,8 +85,8 @@ export function VolumeInfo() {
         <div className="space-y-1.5">
           <div className="flex justify-between text-[10px] font-mono text-zinc-600">
             <span>$0</span>
-            <span>$10K</span>
-            <span>$100K+</span>
+            <span>${(thresholds.low / 1000).toFixed(0)}K</span>
+            <span>${(thresholds.medium / 1000).toFixed(0)}K+</span>
           </div>
           <div className="relative h-1.5 bg-zinc-800 rounded-sm overflow-hidden">
             {/* Background segments */}
@@ -115,10 +111,10 @@ export function VolumeInfo() {
         </div>
 
         {/* Next Tier Info */}
-        {tier.level < 3 && (
+        {tier.level < 3 && volumeInfo?.nextThreshold != null && (
           <div className="mt-2 text-[10px] font-mono text-zinc-500 text-right">
-            NEXT_TARGET: <span className="text-zinc-300">{tier.level === 1 ? '$10K' : '$100K'}</span> //
-            FEE_DROP: <span className="text-green-500">{tier.level === 1 ? '0.5%' : '0.3%'}</span>
+            NEXT_TARGET: <span className="text-zinc-300">${volumeInfo.nextThreshold.toLocaleString()}</span> //
+            FEE_DROP: <span className="text-green-500">{tier.level === 1 ? `${(volumeInfo.currentFeeBps / 100).toFixed(2)}%` : '0.30%'}</span>
           </div>
         )}
       </div>

@@ -251,14 +251,107 @@ cargo contract call \
 ./scripts/verify_deployment.sh local TAX_MANAGER_ADDRESS LUSDT_TOKEN_ADDRESS
 ```
 
+### Passo 7: Verificação de Controle de Acesso
+
+Execute estas verificações após cada deploy para confirmar que as permissões estão corretas:
+
+```bash
+# 1. Verificar que bridge account tem MINTER_ROLE (role ID 2)
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message has_role --args 2 <BRIDGE_ACCOUNT> \
+  --suri //Alice --url ws://localhost:9944 --dry-run
+# Expected output: true
+
+# 2. Verificar que emergency admin tem PAUSER_ROLE (role ID 1)
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message has_role --args 1 <EMERGENCY_ADMIN> \
+  --suri //Alice --url ws://localhost:9944 --dry-run
+# Expected output: true
+
+# 3. Verificar que conta nao-autorizada NAO tem MINTER_ROLE
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message has_role --args 2 <RANDOM_ACCOUNT> \
+  --suri //Alice --url ws://localhost:9944 --dry-run
+# Expected output: false
+
+# 4. Verificar que mint falha sem MINTER_ROLE
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message mint --args <RECIPIENT> 1000000000000 \
+  --suri //Bob --url ws://localhost:9944
+# Expected: Error::Unauthorized (Bob nao tem MINTER_ROLE)
+
+# 5. Verificar owner do Tax Manager
+cargo contract call --contract <TAX_MANAGER_ADDRESS> \
+  --message owner --suri //Alice --url ws://localhost:9944 --dry-run
+# Expected: deployer address (//Alice em local, multisig em producao)
+
+# 6. Verificar que update_fee_config falha para nao-owner
+cargo contract call --contract <TAX_MANAGER_ADDRESS> \
+  --message update_fee_config --args ... \
+  --suri //Bob --url ws://localhost:9944
+# Expected: Error::Unauthorized
+
+# 7. Verificar que emergency pause funciona com PAUSER_ROLE
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message emergency_pause \
+  --suri //Charlie --url ws://localhost:9944  # Charlie = EMERGENCY_ADMIN
+# Expected: ok (contrato pausado)
+
+# 8. Verificar que apenas owner pode despausar
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message emergency_unpause \
+  --suri //Bob --url ws://localhost:9944  # Bob nao e owner
+# Expected: Error::Unauthorized
+
+cargo contract call --contract <LUSDT_TOKEN_ADDRESS> \
+  --message emergency_unpause \
+  --suri //Alice --url ws://localhost:9944  # Alice e deployer/owner
+# Expected: ok
+```
+
+**Checklist de controle de acesso:**
+- [ ] `has_role(MINTER_ROLE=2, bridge_account)` retorna `true`
+- [ ] `has_role(PAUSER_ROLE=1, emergency_admin)` retorna `true`
+- [ ] `has_role(MINTER_ROLE=2, random_account)` retorna `false`
+- [ ] `mint()` com conta sem MINTER_ROLE retorna `Error::Unauthorized`
+- [ ] `update_fee_config()` com conta sem owner retorna `Error::Unauthorized`
+- [ ] `emergency_pause()` com PAUSER_ROLE funciona
+- [ ] `emergency_unpause()` sem owner role retorna `Error::Unauthorized`
+
+## 🔐 Access Control Requirement
+
+### ensure_role (LUSDT Token)
+
+The LUSDT Token contract uses on-chain RBAC. Every restricted operation checks the caller's role via `ensure_role(role)`. If the caller does not hold the required role, the transaction reverts with `Error::Unauthorized`.
+
+Required roles for deployment:
+
+| Operation | Required Role | Role ID |
+|-----------|--------------|---------|
+| `mint()` | `MINTER_ROLE` | 2 |
+| `emergency_pause()` | `PAUSER_ROLE` or `DEFAULT_ADMIN_ROLE` | 1 or 0 |
+| `emergency_unpause()` | `DEFAULT_ADMIN_ROLE` | 0 |
+| `grant_role()` / `revoke_role()` | `DEFAULT_ADMIN_ROLE` | 0 |
+| `set_code()` | `DEFAULT_ADMIN_ROLE` | 0 |
+
+The `bridge_account` constructor parameter receives `MINTER_ROLE` automatically at instantiation. All other roles are held by the deployer until transferred to multisig accounts.
+
+### ensure_owner (Tax Manager)
+
+All administrative Tax Manager messages check `self.env().caller() == self.owner` via `ensure_owner()`. Owner is set to the deployer at instantiation.
+
+**Important**: `process_fees`, `process_fees_flexible`, `process_dual_fee`, and `process_burn_fee_only` do **not** check the caller. These are intended to be called only by the LUSDT Token contract via cross-contract calls. See `SECURITY.md` for details and recommended upgrade path.
+
+---
+
 ## 🔒 Configurações de Segurança
 
 ### Controles de Acesso
 
 #### LUSDT Token
-- **Owner**: Multisig para operações administrativas
-- **Bridge Account**: Serviço de ponte com HSM
-- **Emergency Admin**: Multisig separado para pausas de emergência
+- **Owner / DEFAULT_ADMIN_ROLE**: Multisig para operações administrativas
+- **Bridge Account (MINTER_ROLE)**: Serviço de ponte com HSM — única conta autorizada a fazer mint
+- **Emergency Admin (PAUSER_ROLE)**: Multisig separado para pausas de emergência
 
 #### Tax Manager
 - **Owner**: Mesmo multisig do LUSDT Token
@@ -387,7 +480,12 @@ cargo contract call \
 - [ ] Testes de validação executados
 
 ### Pós-Implantação
-- [ ] Verificação de implantação concluída
+- [ ] Verificação de implantação concluída (Passo 6)
+- [ ] Verificação de controle de acesso concluída (Passo 7)
+- [ ] `has_role(MINTER_ROLE, bridge_account)` confirmado
+- [ ] `has_role(PAUSER_ROLE, emergency_admin)` confirmado
+- [ ] Conta não-autorizada rejeitada em mint e update_fee_config
+- [ ] Owner do Tax Manager é o multisig correto (não deployer temporário)
 - [ ] Monitoramento configurado
 - [ ] Alertas configurados
 - [ ] Documentação atualizada

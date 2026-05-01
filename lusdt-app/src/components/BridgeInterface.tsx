@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useWallet } from './WalletProvider'
 import { useLunesContract } from '../hooks/useLunesContract'
 import { useSolanaContract } from '../hooks/useSolanaContract'
-import { useBridgeAPI, useTransactionPolling, TransactionRecord } from '../api/bridgeClient'
+import { useBridgeAPI, useTransactionPolling, TransactionRecord, FeeCalculation } from '../api/bridgeClient'
 import { DataValidator, SecureErrorHandler, ClientRateLimiter, WalletSecurity } from '../utils/security'
 import { CONTRACT_ADDRESSES } from '../contracts/addresses'
 import { useToast } from './ui/Toast'
@@ -14,9 +14,7 @@ export function BridgeInterface() {
   const { solanaWallet, lunesWallet } = useWallet()
   const {
     burnLusdt,
-    calculateFee,
     isPaused,
-    getMonthlyVolume,
     getLusdtBalance,
     checkTaxManagerApproval,
     approveLusdtForTaxManager,
@@ -63,30 +61,19 @@ export function BridgeInterface() {
     !!activeTxId
   )
 
-  const [, setMonthlyVolume] = useState('0')
-  const [feeInfo, setFeeInfo] = useState<{
-    feeAmount: string
-    feeCurrency: string
-    netAmount: string
-    feePercentBps: number
-    volumeTier: 'low' | 'medium' | 'high'
-  } | null>(null)
+  const [feeInfo, setFeeInfo] = useState<FeeCalculation | null>(null)
 
   const sourceNetwork = direction === 'solana-to-lunes' ? 'solana' : 'lunes'
   const targetNetwork = direction === 'solana-to-lunes' ? 'lunes' : 'solana'
   const sourceWallet = sourceNetwork === 'solana' ? solanaWallet : lunesWallet
   const targetWallet = targetNetwork === 'solana' ? solanaWallet : lunesWallet
 
-  // Verificar status do contrato e volume
+  // Verificar status do contrato
   useEffect(() => {
     const checkContractStatus = async () => {
       try {
-        const [paused, volume] = await Promise.all([
-          isPaused(),
-          getMonthlyVolume()
-        ])
+        const paused = await isPaused()
         setContractPaused(paused)
-        setMonthlyVolume(volume)
       } catch (error) {
         console.error('Erro ao verificar status:', error)
       }
@@ -95,7 +82,7 @@ export function BridgeInterface() {
     if (lunesWallet) {
       checkContractStatus()
     }
-  }, [lunesWallet, isPaused, getMonthlyVolume])
+  }, [lunesWallet, isPaused])
 
   // Check Tax Manager approvals when user selects burn direction
   useEffect(() => {
@@ -159,7 +146,7 @@ export function BridgeInterface() {
     return null;
   }
 
-  // Calcular taxas com validação
+  // Calcular taxas via API (nunca no frontend)
   const updateFeeInfo = async (value: string) => {
     const validation = DataValidator.validateTransactionAmount(value);
     if (!validation.isValid || parseFloat(validation.sanitizedAmount) <= 0) {
@@ -168,7 +155,10 @@ export function BridgeInterface() {
     }
 
     try {
-      const fees = await calculateFee(validation.sanitizedAmount);
+      const fees = await bridgeAPI.calculateFee(
+        parseFloat(validation.sanitizedAmount),
+        sourceNetwork
+      );
       setFeeInfo(fees);
     } catch (error) {
       SecureErrorHandler.logError(error, 'Fee calculation failed');
@@ -443,7 +433,7 @@ export function BridgeInterface() {
               <div className="space-y-1 font-mono text-xs">
                 <div className="flex justify-between text-zinc-500">
                   <span>PROTOCOL_FEE ({(feeInfo.feePercentBps / 100).toFixed(2)}%)</span>
-                  <span>${feeInfo.feeAmount} {sourceNetwork === 'solana' ? 'USDT' : 'LUSDT'}</span>
+                  <span>${typeof feeInfo.feeAmount === 'number' ? feeInfo.feeAmount.toFixed(6) : feeInfo.feeAmount} {sourceNetwork === 'solana' ? 'USDT' : 'LUSDT'}</span>
                 </div>
                 <div className="flex justify-between text-zinc-500">
                   <span>VOLUME_TIER</span>
@@ -452,7 +442,7 @@ export function BridgeInterface() {
                 <div className="h-px bg-white/5 my-2"></div>
                 <div className="flex justify-between items-center">
                   <span className="text-green-500/80">ESTIMATED_ARRIVAL</span>
-                  <span className="text-xl text-green-400 font-bold tracking-tighter">{feeInfo.netAmount} <span className="text-sm font-normal text-zinc-500">TOKENS</span></span>
+                  <span className="text-xl text-green-400 font-bold tracking-tighter">{typeof feeInfo.netAmount === 'number' ? feeInfo.netAmount.toFixed(6) : feeInfo.netAmount} <span className="text-sm font-normal text-zinc-500">TOKENS</span></span>
                 </div>
               </div>
             </div>

@@ -53,8 +53,48 @@ export interface FeeCalculation {
   feeAmount: number;
   feeCurrency: string;
   feePercentage: number;
+  feePercentBps: number;
   totalAmount: number;
   netAmount: number;
+  volumeTier: 'low' | 'medium' | 'high';
+  monthlyVolumeUsd: number;
+}
+
+/**
+ * Bridge config response / Resposta de configuração da ponte
+ */
+export interface BridgeConfig {
+  solanaBridgeAddress: string;
+  lunesContractAddress: string;
+  limits: { minAmount: number; maxAmount: number };
+  feeBps: { low: number; medium: number; high: number };
+  volumeThresholds: { low: number; medium: number };
+  feeCaps: { small: number; medium: number; large: number; veryLarge: number };
+  feeDistribution: { dev: number; insuranceFund: number; stakingRewards: number };
+  status: string;
+}
+
+/**
+ * Volume info response / Resposta de informações de volume
+ */
+export interface VolumeInfoResponse {
+  monthlyVolumeUsd: number;
+  tier: 'low' | 'medium' | 'high';
+  currentFeeBps: number;
+  progress: number;
+  nextThreshold: number | null;
+  volumeThresholds: { low: number; medium: number };
+}
+
+/**
+ * Reserve data response / Resposta de dados de reservas
+ */
+export interface ReserveDataResponse {
+  totalBackingUSDT: number;
+  totalCirculatingLUSDT: number;
+  backingRatio: number;
+  lastUpdate: string;
+  reserves: { solanaWallet: string; lunesContract: string };
 }
 
 /**
@@ -190,6 +230,13 @@ class BridgeAPIClient {
    */
   async getReserves(): Promise<ReserveDataResponse> {
     return this.request<ReserveDataResponse>('/bridge/reserves');
+  }
+
+  /**
+   * Get volume info: monthly volume, tier, fee rate
+   */
+  async getVolumeInfo(): Promise<VolumeInfoResponse> {
+    return this.request<VolumeInfoResponse>('/bridge/volume-info');
   }
 
   // ==================== TRANSACTIONS ====================

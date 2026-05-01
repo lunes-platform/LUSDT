@@ -36,6 +36,9 @@ yarn-error.log*
 *.log
 logs/
 
-# Solana keypairs (never commit)
+# Solana keypairs — never commit, use KMS/Vault in production
 solana-keys/
 **/solana-keys/
+*_keypair.json
+**/*_keypair.json
+*.keypair.json

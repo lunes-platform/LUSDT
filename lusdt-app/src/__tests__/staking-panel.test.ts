@@ -14,11 +14,11 @@
  *  7. URL parameter routing (?view=staking)
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import { BRIDGE_CONFIG } from '../config';
 
 // ── Constants mirroring StakingPanel ─────────────────────────────────
 const STAKING_MIN_LUNES = 100_000;
-const FEE_DISTRIBUTION = BRIDGE_CONFIG.feeDistribution; // { dev: 80, insuranceFund: 15, stakingRewards: 5 }
+// Fee distribution comes from /bridge/config API at runtime — hardcoded here only for unit test math
+const FEE_DISTRIBUTION = { dev: 80, insuranceFund: 15, stakingRewards: 5 };
 
 // ── Helper: replicates StakingPanel's computed values ────────────────
 function computeStakingStats(monthlyVolume: number, feeBps: number) {

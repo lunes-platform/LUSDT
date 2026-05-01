@@ -1,0 +1,17 @@
+# SECURITY: Solana guardian keypair JSON files contain 64-byte ed25519 private keys
+# in plaintext. They must NEVER be committed. These files were already committed in
+# commit b57d801 — those keys are compromised and must be rotated immediately.
+# New keys must be generated and protected via AWS KMS or HashiCorp Vault.
+solana-keys/
+**/solana-keys/
+*.keypair.json
+*_keypair.json
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Build artifacts
+dist/
+node_modules/

@@ -188,14 +188,16 @@ export class LunesClient {
       );
 
       if (result.result.isOk && result.output) {
-        const feeBps = parseInt(result.output.toString(), 10);
+        const json = result.output.toJSON() as { ok?: number } | number | null;
+        const raw = json !== null && typeof json === 'object' && 'ok' in json ? json.ok : json;
+        const feeBps = typeof raw === 'number' ? raw : parseInt(String(raw), 10);
         if (feeBps > 0 && feeBps <= 1000) { // sanity check: max 10%
-          logger.info('📊 Tax Manager fee queried', { feeBps });
+          logger.info('Tax Manager fee queried', { feeBps });
           return feeBps;
         }
       }
 
-      logger.warn('⚠️  Tax Manager fee query returned invalid value, using fallback');
+      logger.warn('Tax Manager fee query returned invalid value, using fallback');
       return LunesClient.DEFAULT_FEE_BPS;
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -225,7 +227,9 @@ export class LunesClient {
       );
 
       if (result.result.isOk && result.output) {
-        const raw = parseInt(result.output.toString(), 10);
+        const json = result.output.toJSON() as { ok?: number } | number | null;
+        const unwrapped = json !== null && typeof json === 'object' && 'ok' in json ? json.ok : json;
+        const raw = typeof unwrapped === 'number' ? unwrapped : parseInt(String(unwrapped), 10);
         if (raw > 0) {
           return raw / 1_000_000; // 6-decimal fixed point → USD
         }
@@ -237,19 +241,52 @@ export class LunesClient {
     }
   }
 
+  /**
+   * Query Tax Manager for monthly volume in USD (6-decimal fixed point).
+   * Returns 0 if the contract is unavailable.
+   */
+  async queryMonthlyVolumeUsd(): Promise<number> {
+    try {
+      if (!this.taxManagerContract) {
+        return 0;
+      }
+
+      const gasLimit = this.api.registry.createType('WeightV2', {
+        refTime: 5_000_000_000_000n,
+        proofSize: 5_000_000n
+      }) as any;
+
+      const result = await this.taxManagerContract.query.getMonthlyVolumeUsd(
+        this.account.address,
+        { gasLimit, storageDepositLimit: null }
+      );
+
+      if (result.result.isOk && result.output) {
+        const json = result.output.toJSON() as { ok?: number } | number | null;
+        const unwrapped = json !== null && typeof json === 'object' && 'ok' in json ? json.ok : json;
+        const raw = typeof unwrapped === 'number' ? unwrapped : parseInt(String(unwrapped), 10);
+        if (!isNaN(raw) && raw >= 0) {
+          return raw / 1_000_000; // 6-decimal fixed point → USD
+        }
+      }
+
+      return 0;
+    } catch {
+      return 0;
+    }
+  }
+
   async getTotalSupply(): Promise<number> {
     try {
       if (!this.contract) {
         throw new Error('Contract not loaded');
       }
 
-      // Estima gas para leitura
       const gasLimit = this.api.registry.createType('WeightV2', {
-        refTime: 10_000_000_000,
-        proofSize: 10_000
+        refTime: 10_000_000_000n,
+        proofSize: 10_000n
       }) as any;
 
-      // Chama total_supply (query)
       const result = await this.contract.query.totalSupply(
         this.account.address,
         { gasLimit, storageDepositLimit: null }
@@ -290,8 +327,8 @@ export class LunesClient {
     }
 
     const gasLimit = this.api.registry.createType('WeightV2', {
-      refTime: 100_000_000_000,
-      proofSize: 100_000
+      refTime: 100_000_000_000n,
+      proofSize: 100_000n
     }) as any;
 
     const rawAmount = Math.round(amount * LunesClient.LUSDT_MULTIPLIER);
@@ -302,20 +339,25 @@ export class LunesClient {
       this.contract.tx
         .mint({ gasLimit, storageDepositLimit: null }, recipient, rawAmount)
         .signAndSend(this.account, ({ status, dispatchError }) => {
-          if (dispatchError) {
-            const errMsg = dispatchError.isModule
-              ? (() => {
-                  const decoded = this.api.registry.findMetaError(dispatchError.asModule);
-                  return `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
-                })()
-              : dispatchError.toString();
+          try {
+            if (dispatchError) {
+              const errMsg = dispatchError.isModule
+                ? (() => {
+                    const decoded = this.api.registry.findMetaError(dispatchError.asModule);
+                    return `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+                  })()
+                : dispatchError.toString();
+              if (unsub) unsub();
+              reject(new Error(`LUSDT mint dispatch error: ${errMsg}`));
+            } else if (status.isFinalized) {
+              const blockHash = status.asFinalized.toString();
+              logger.info('LUSDT mint finalized', { blockHash, recipient, amount });
+              if (unsub) unsub();
+              resolve(blockHash);
+            }
+          } catch (callbackErr) {
             if (unsub) unsub();
-            reject(new Error(`LUSDT mint dispatch error: ${errMsg}`));
-          } else if (status.isInBlock) {
-            const blockHash = status.asInBlock.toString();
-            logger.info('✅ LUSDT mint confirmed in block', { blockHash, recipient, amount });
-            if (unsub) unsub();
-            resolve(blockHash);
+            reject(callbackErr instanceof Error ? callbackErr : new Error(String(callbackErr)));
           }
         })
         .then(unsubFn => { unsub = unsubFn; })
@@ -333,8 +375,8 @@ export class LunesClient {
     }
 
     const gasLimit = this.api.registry.createType('WeightV2', {
-      refTime: 100_000_000_000,
-      proofSize: 100_000
+      refTime: 100_000_000_000n,
+      proofSize: 100_000n
     }) as any;
 
     const rawAmount = Math.round(amount * LunesClient.LUSDT_MULTIPLIER);
@@ -345,20 +387,25 @@ export class LunesClient {
       this.contract.tx
         .burn({ gasLimit, storageDepositLimit: null }, rawAmount, solanaRecipient)
         .signAndSend(this.account, ({ status, dispatchError }) => {
-          if (dispatchError) {
-            const errMsg = dispatchError.isModule
-              ? (() => {
-                  const decoded = this.api.registry.findMetaError(dispatchError.asModule);
-                  return `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
-                })()
-              : dispatchError.toString();
+          try {
+            if (dispatchError) {
+              const errMsg = dispatchError.isModule
+                ? (() => {
+                    const decoded = this.api.registry.findMetaError(dispatchError.asModule);
+                    return `${decoded.section}.${decoded.name}: ${decoded.docs.join(' ')}`;
+                  })()
+                : dispatchError.toString();
+              if (unsub) unsub();
+              reject(new Error(`LUSDT burn dispatch error: ${errMsg}`));
+            } else if (status.isFinalized) {
+              const blockHash = status.asFinalized.toString();
+              logger.info('LUSDT burn finalized', { blockHash, amount, solanaRecipient });
+              if (unsub) unsub();
+              resolve(blockHash);
+            }
+          } catch (callbackErr) {
             if (unsub) unsub();
-            reject(new Error(`LUSDT burn dispatch error: ${errMsg}`));
-          } else if (status.isInBlock) {
-            const blockHash = status.asInBlock.toString();
-            logger.info('✅ LUSDT burn confirmed in block', { blockHash, amount, solanaRecipient });
-            if (unsub) unsub();
-            resolve(blockHash);
+            reject(callbackErr instanceof Error ? callbackErr : new Error(String(callbackErr)));
           }
         })
         .then(unsubFn => { unsub = unsubFn; })
@@ -475,10 +522,9 @@ export class LunesClient {
 
       const account = address || this.account.address;
 
-      // Query balance method on contract
       const gasLimit = this.api.registry.createType('WeightV2', {
-        refTime: 10_000_000_000,
-        proofSize: 10_000
+        refTime: 10_000_000_000n,
+        proofSize: 10_000n
       }) as any;
 
       const result = await this.contract.query.balanceOf(

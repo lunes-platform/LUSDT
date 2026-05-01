@@ -3,7 +3,6 @@ import { useWallet } from './WalletProvider';
 import { useLunesContract } from '../hooks/useLunesContract';
 import { useStakingContract } from '../hooks/useStakingContract';
 import { useBridgeAPI } from '../api/bridgeClient';
-import { BRIDGE_CONFIG } from '../config';
 import {
   Coins,
   TrendingUp,
@@ -57,8 +56,10 @@ export function StakingPanel() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
+  const [feeDistribution, setFeeDistribution] = useState({ dev: 80, insuranceFund: 15, stakingRewards: 5 });
+
   const totalFees = monthlyVolume * (currentFeeBps / 10000);
-  const stakingPool = totalFees * (BRIDGE_CONFIG.feeDistribution.stakingRewards / 100);
+  const stakingPool = totalFees * (feeDistribution.stakingRewards / 100);
   const feePercent = (currentFeeBps / 100).toFixed(2);
   const canStake = lunesBalance >= STAKING_MIN_LUNES || staking.isUserStaking;
   const availableToStake = lunesBalance;
@@ -100,10 +101,15 @@ export function StakingPanel() {
 
       if (bridgeConnected) {
         try {
-          const [stats, contractStatus] = await Promise.all([
+          const [stats, contractStatus, bridgeCfg] = await Promise.all([
             bridgeAPI.getStatistics().catch(() => null),
             bridgeAPI.adminGetContractStatus().catch(() => null),
+            bridgeAPI.getBridgeConfig().catch(() => null),
           ]);
+
+          if (bridgeCfg?.feeDistribution) {
+            setFeeDistribution(bridgeCfg.feeDistribution);
+          }
           if (contractStatus) {
             if (contractVolume === 0 && contractStatus.monthlyVolume > 0) {
               contractVolume = contractStatus.monthlyVolume;
@@ -512,9 +518,9 @@ export function StakingPanel() {
 
         <div className="space-y-3">
           {[
-            { label: 'Dev Team', pct: BRIDGE_CONFIG.feeDistribution.dev, color: 'bg-blue-500', textColor: 'text-blue-400', amount: totalFees * 0.80 },
-            { label: 'Insurance Fund', pct: BRIDGE_CONFIG.feeDistribution.insuranceFund, color: 'bg-green-500', textColor: 'text-green-400', amount: totalFees * 0.15 },
-            { label: 'Staking Rewards', pct: BRIDGE_CONFIG.feeDistribution.stakingRewards, color: 'bg-purple-500', textColor: 'text-purple-400', amount: stakingPool },
+            { label: 'Dev Team', pct: feeDistribution.dev, color: 'bg-blue-500', textColor: 'text-blue-400', amount: totalFees * (feeDistribution.dev / 100) },
+            { label: 'Insurance Fund', pct: feeDistribution.insuranceFund, color: 'bg-green-500', textColor: 'text-green-400', amount: totalFees * (feeDistribution.insuranceFund / 100) },
+            { label: 'Staking Rewards', pct: feeDistribution.stakingRewards, color: 'bg-purple-500', textColor: 'text-purple-400', amount: stakingPool },
           ].map((d, i) => (
             <div key={i} className="flex items-center gap-4 font-mono text-xs">
               <div className="w-28 text-zinc-400 text-right">{d.label}</div>
@@ -598,7 +604,7 @@ export function StakingPanel() {
       {/* ═══ Footer: data source + prices ═══ */}
       <div className="text-center text-[10px] font-mono text-zinc-600 py-2 space-y-1">
         <div>
-          LUNES_PRICE: ${lunesPrice.toFixed(4)} USD · FEE_RATE: {feePercent}% · POOL_SHARE: {BRIDGE_CONFIG.feeDistribution.stakingRewards}%
+          LUNES_PRICE: ${lunesPrice.toFixed(4)} USD · FEE_RATE: {feePercent}% · POOL_SHARE: {feeDistribution.stakingRewards}%
         </div>
         <div className="flex items-center justify-center gap-2">
           {dataSource === 'contract' && (

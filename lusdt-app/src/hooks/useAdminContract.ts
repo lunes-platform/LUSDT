@@ -251,11 +251,6 @@ export function useAdminContract() {
       throw new Error('Contract or wallet not available');
     }
 
-    const isAdmin = await isOwner();
-    if (!isAdmin) {
-      throw new Error('Unauthorized: Only owner can update price');
-    }
-
     try {
       setLoading(true);
       const injector = await web3FromSource(lunesWallet.source || 'polkadot-js');
@@ -287,17 +282,12 @@ export function useAdminContract() {
     } finally {
       setLoading(false);
     }
-  }, [taxManagerContract, lunesWallet, isOwner, refreshStats]);
+  }, [taxManagerContract, lunesWallet, refreshStats]);
 
   // Update fee configuration (Admin only)
   const updateFeeConfig = useCallback(async (config: FeeConfig): Promise<string> => {
     if (!taxManagerContract || !lunesWallet) {
       throw new Error('Contract or wallet not available');
-    }
-
-    const isAdmin = await isOwner();
-    if (!isAdmin) {
-      throw new Error('Unauthorized: Only owner can update fee config');
     }
 
     try {
@@ -338,17 +328,12 @@ export function useAdminContract() {
     } finally {
       setLoading(false);
     }
-  }, [taxManagerContract, lunesWallet, isOwner, refreshStats]);
+  }, [taxManagerContract, lunesWallet, refreshStats]);
 
   // Update dev wallets (Admin only) — insurance_fund is fixed and cannot be changed
   const updateDistributionWallets = useCallback(async (wallets: DistributionWallets): Promise<string> => {
     if (!taxManagerContract || !lunesWallet) {
       throw new Error('Contract or wallet not available');
-    }
-
-    const isAdmin = await isOwner();
-    if (!isAdmin) {
-      throw new Error('Unauthorized: Only owner can update wallets');
     }
 
     try {
@@ -386,17 +371,12 @@ export function useAdminContract() {
     } finally {
       setLoading(false);
     }
-  }, [taxManagerContract, lunesWallet, isOwner, refreshStats]);
+  }, [taxManagerContract, lunesWallet, refreshStats]);
 
   // Pause contract (Admin only)
   const pauseContract = useCallback(async (reason: string): Promise<string> => {
     if (!lusdtContract || !lunesWallet) {
       throw new Error('Contract or wallet not available');
-    }
-
-    const isAdmin = await isOwner();
-    if (!isAdmin) {
-      throw new Error('Unauthorized: Only owner can pause');
     }
 
     try {
@@ -427,17 +407,12 @@ export function useAdminContract() {
     } finally {
       setLoading(false);
     }
-  }, [lusdtContract, lunesWallet, isOwner, refreshStats]);
+  }, [lusdtContract, lunesWallet, refreshStats]);
 
   // Unpause contract (Admin only)
   const unpauseContract = useCallback(async (): Promise<string> => {
     if (!lusdtContract || !lunesWallet) {
       throw new Error('Contract or wallet not available');
-    }
-
-    const isAdmin = await isOwner();
-    if (!isAdmin) {
-      throw new Error('Unauthorized: Only owner can unpause');
     }
 
     try {
@@ -468,7 +443,7 @@ export function useAdminContract() {
     } finally {
       setLoading(false);
     }
-  }, [lusdtContract, lunesWallet, isOwner, refreshStats]);
+  }, [lusdtContract, lunesWallet, refreshStats]);
 
   // Get volume tier info
   const getVolumeTierInfo = useCallback((volume: string): {

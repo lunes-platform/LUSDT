@@ -26,31 +26,3 @@ export const NETWORKS = {
   }
 }
 
-// Configurações do bridge baseadas no Tax Manager
-export const BRIDGE_CONFIG = {
-  // Taxas em basis points (do contrato)
-  baseFee: 50, // 0.5%
-  lowVolumeFee: 60, // 0.6%
-  mediumVolumeFee: 50, // 0.5%
-  highVolumeFee: 30, // 0.3%
-  
-  // Limites (baseados no contrato)
-  minAmount: 1, // Mínimo 1 USDT/LUSDT
-  maxAmount: 1000000, // Máximo 1M USDT/LUSDT
-  
-  // Tetos de taxa em LUNES (do contrato)
-  feeCaps: {
-    small: 0.5, // ≤ $100: Max 0.5 LUNES
-    medium: 2, // $100-$1K: Max 2 LUNES
-    large: 10, // $1K-$10K: Max 10 LUNES
-    veryLarge: 50, // > $10K: Max 50 LUNES
-  },
-  
-  // Distribuição de taxas (v3 - dual-fee + staking rewards)
-  // Taxas cobradas na moeda da transação: USDT (mint) ou LUSDT (burn)
-  feeDistribution: {
-    dev: 80,               // 80% -> carteira dev (por rede: dev_solana ou dev_lunes)
-    insuranceFund: 15,     // 15% -> fundo de seguro (fixo, não editável)
-    stakingRewards: 5,     // 5%  -> pool de staking rewards (distribuição mensal, ≥100k LUNES)
-  }
-}

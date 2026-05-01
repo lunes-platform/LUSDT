@@ -86,7 +86,6 @@ describe('useLunesContract', () => {
       expect(typeof result.current.getLunesPrice).toBe('function')
       expect(typeof result.current.getCurrentFeeBps).toBe('function')
       expect(typeof result.current.getMonthlyVolume).toBe('function')
-      expect(typeof result.current.calculateFee).toBe('function')
     })
   })
 
@@ -110,38 +109,6 @@ describe('useLunesContract', () => {
       })
     })
 
-    it('should calculate fees correctly', async () => {
-      const { result } = renderHook(() => useLunesContract())
-
-      await act(async () => {
-        const feeInfo = await result.current.calculateFee('1000')
-
-        // Deve retornar estrutura completa mesmo com fallback
-        expect(feeInfo).toHaveProperty('feeAmount')
-        expect(feeInfo).toHaveProperty('feeCurrency')
-        expect(feeInfo).toHaveProperty('netAmount')
-        expect(feeInfo).toHaveProperty('feePercentBps')
-        expect(feeInfo).toHaveProperty('volumeTier')
-      })
-    })
-
-    it('should handle fee calculation with volume tiers', async () => {
-      const { result } = renderHook(() => useLunesContract())
-
-      await act(async () => {
-        // Teste com valor baixo
-        const feeLow = await result.current.calculateFee('100')
-        expect(feeLow.volumeTier).toBe('low')
-
-        // Teste com valor médio
-        const feeMedium = await result.current.calculateFee('10000')
-        expect(feeMedium.volumeTier).toBe('low') // fallback
-
-        // Teste com valor alto
-        const feeHigh = await result.current.calculateFee('100000')
-        expect(feeHigh.volumeTier).toBe('low') // fallback
-      })
-    })
   })
 
   describe('Error Handling', () => {
@@ -169,44 +136,4 @@ describe('useLunesContract', () => {
     })
   })
 
-  describe('Fee Calculation Logic', () => {
-    it('should return valid fee structure for different amounts', async () => {
-      const { result } = renderHook(() => useLunesContract())
-
-      await act(async () => {
-        const feeSmall = await result.current.calculateFee('10')
-        expect(typeof feeSmall.feeAmount).toBe('string')
-        expect(typeof feeSmall.netAmount).toBe('string')
-        expect(feeSmall.feeCurrency).toBe('USD')
-
-        const feeLarge = await result.current.calculateFee('1000000')
-        expect(typeof feeLarge.feeAmount).toBe('string')
-        expect(typeof feeLarge.netAmount).toBe('string')
-      })
-    })
-
-    it('should handle invalid input gracefully', async () => {
-      const { result } = renderHook(() => useLunesContract())
-
-      await act(async () => {
-        const feeInfo = await result.current.calculateFee('invalid')
-        expect(feeInfo.volumeTier).toBe('low')
-        // Fallback fee rate is 0 when contract unavailable (no fake data)
-        expect(feeInfo.feePercentBps).toBe(0)
-      })
-    })
-  })
-
-  describe('Error Handling', () => {
-    it('should return safe defaults on errors', async () => {
-      const { result } = renderHook(() => useLunesContract())
-      
-      await act(async () => {
-        const feeInfo = await result.current.calculateFee('invalid')
-        // NaN input produces NaN feeAmount string
-        expect(feeInfo.feeCurrency).toBe('USD')
-        expect(feeInfo.volumeTier).toBe('low')
-      })
-    })
-  })
 })

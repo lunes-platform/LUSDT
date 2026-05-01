@@ -183,6 +183,8 @@ pub mod tax_manager {
             user: AccountId,
             lusdt_amount: Balance,
         ) -> Result<(), ink::LangError> {
+            self.ensure_authorized_caller()
+                .map_err(|_| ink::LangError::CouldNotReadInput)?;
             self._process_fees(operation, user, lusdt_amount)
                 .map_err(|_| ink::LangError::CouldNotReadInput)
         }
@@ -195,6 +197,8 @@ pub mod tax_manager {
             lusdt_amount: Balance,
             fee_type: FeeType,
         ) -> Result<(), ink::LangError> {
+            self.ensure_authorized_caller()
+                .map_err(|_| ink::LangError::CouldNotReadInput)?;
             self._process_fees_flexible(operation, user, lusdt_amount, fee_type)
                 .map_err(|_| ink::LangError::CouldNotReadInput)
         }
@@ -207,6 +211,8 @@ pub mod tax_manager {
             lusdt_amount: Balance,
             stablecoin_fee_type: FeeType,
         ) -> Result<(), ink::LangError> {
+            self.ensure_authorized_caller()
+                .map_err(|_| ink::LangError::CouldNotReadInput)?;
             self._process_dual_fee(operation, user, lusdt_amount, stablecoin_fee_type)
                 .map_err(|_| ink::LangError::CouldNotReadInput)
         }
@@ -218,6 +224,8 @@ pub mod tax_manager {
             user: AccountId,
             lusdt_amount: Balance,
         ) -> Result<(), ink::LangError> {
+            self.ensure_authorized_caller()
+                .map_err(|_| ink::LangError::CouldNotReadInput)?;
             self._process_burn_fee_only(operation, user, lusdt_amount)
                 .map_err(|_| ink::LangError::CouldNotReadInput)
         }
@@ -756,6 +764,15 @@ pub mod tax_manager {
             }
         }
 
+        fn ensure_authorized_caller(&self) -> Result<(), Error> {
+            let caller = self.env().caller();
+            if caller != self.owner && caller != self.lusdt_token_address {
+                Err(Error::Unauthorized)
+            } else {
+                Ok(())
+            }
+        }
+
         /// Calculate fee in LUNES with intelligent capping to prevent excessive fees
         /// when LUNES price increases. Uses hybrid approach: USD-based fee with
         /// maximum LUNES limits to ensure sustainability.
@@ -787,15 +804,16 @@ pub mod tax_manager {
                 .ok_or(Error::ArithmeticOverflow)?;
 
             // 3. Apply intelligent caps based on transaction size / Aplicar tetos inteligentes baseados no tamanho da transação
+            // LUNES uses 12 decimals: 1 LUNES = 1_000_000_000_000
             let max_fee_lunes = match lusdt_amount {
-                // Small transactions (≤ $100): Max 0.5 LUNES / Transações pequenas (≤ $100): Máx 0.5 LUNES
-                0..=100_000_000 => 500_000,
-                // Medium transactions ($100-$1K): Max 2 LUNES / Transações médias ($100-$1K): Máx 2 LUNES
-                100_000_001..=1_000_000_000 => 2_000_000,
-                // Large transactions ($1K-$10K): Max 10 LUNES / Transações grandes ($1K-$10K): Máx 10 LUNES
-                1_000_000_001..=10_000_000_000 => 10_000_000,
-                // Very large transactions (>$10K): Max 50 LUNES / Transações muito grandes (>$10K): Máx 50 LUNES
-                _ => 50_000_000,
+                // Small transactions (≤ $100): Max 0.5 LUNES
+                0..=100_000_000 => 500_000_000_000,
+                // Medium transactions ($100-$1K): Max 2 LUNES
+                100_000_001..=1_000_000_000 => 2_000_000_000_000,
+                // Large transactions ($1K-$10K): Max 10 LUNES
+                1_000_000_001..=10_000_000_000 => 10_000_000_000_000,
+                // Very large transactions (>$10K): Max 50 LUNES
+                _ => 50_000_000_000_000,
             };
 
             // 4. Return the minimum between calculated fee and cap / Retornar o mínimo entre taxa calculada e teto
@@ -977,17 +995,17 @@ pub mod tax_manager {
             let wallets = setup_wallets(&accounts);
             let contract = setup_contract(accounts.alice, &wallets, 100_000); // $0.10 per LUNES
 
-            // Small transaction (≤ $100): Should cap at 0.5 LUNES
+            // Small transaction (≤ $100): Should cap at 0.5 LUNES (12 decimals = 500_000_000_000)
             let small_fee = contract
                 .calculate_fee_in_lunes(100_000_000, 60, 100_000)
                 .unwrap(); // $100, 0.6%
-            assert!(small_fee <= 500_000); // Max 0.5 LUNES
+            assert!(small_fee <= 500_000_000_000); // Max 0.5 LUNES
 
-            // Large transaction (>$10K): Should cap at 50 LUNES
+            // Large transaction (>$10K): Should cap at 50 LUNES (12 decimals = 50_000_000_000_000)
             let large_fee = contract
                 .calculate_fee_in_lunes(20_000_000_000, 60, 100_000)
                 .unwrap(); // $20K, 0.6%
-            assert!(large_fee <= 50_000_000); // Max 50 LUNES
+            assert!(large_fee <= 50_000_000_000_000); // Max 50 LUNES
         }
 
         #[ink::test]

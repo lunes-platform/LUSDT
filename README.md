@@ -869,23 +869,72 @@ cd bridge-service && pnpm test:watch
 
 - **Multisig Vault** — 3 bots de aprovacao com quorum 2/3 (3/3 para high-value)
 - **Circuit Breaker** — pausa automatica em caso de falhas consecutivas
-- **HSM/KMS** — chaves protegidas via AWS KMS ou HashiCorp Vault Transit
-- **Spending Limits** — limites por tx, hora e dia
-- **Timelock** — delay obrigatorio para transferencias de alto valor
-- **RBAC** — roles nos contratos: ADMIN, MINTER, EMERGENCY
-- **Rate Limiting** — limites por IP no bridge service
+- **HSM/KMS** — chaves protegidas via AWS KMS ou HashiCorp Vault Transit; NUNCA armazene chaves em variaveis de ambiente em producao
+- **Spending Limits** — limites por tx ($10K), hora ($25K) e dia ($50K)
+- **Timelock** — delay de 10 minutos para transferencias >= $5K
+- **HMAC Authentication** — endpoints bridge protegidos com HMAC-SHA256 + replay protection (5 min window) em producao
+- **RBAC** — roles on-chain nos contratos: `DEFAULT_ADMIN_ROLE`, `MINTER_ROLE`, `PAUSER_ROLE`, `TAX_MANAGER_ROLE`
+- **Rate Limiting** — express-rate-limit no bridge service + rate limit on-chain (1M LUSDT/hora)
 - **Proof of Reserve** — colateralizacao 1:1 garantida por design
 - **BurnEngine** — queima de LUNES on-chain, permissionless, auditavel
-- **Redis Persistence** — propostas e counters persistidos entre restarts
+- **Redis Persistence** — propostas e counters persistidos entre restarts (nao resetam em deploy)
+- **Guardian Key Rotation** — chaves rotacionadas via `scripts/setup-guardian-keys.sh`, NUNCA commitadas no git
+
+## Configuracao de Seguranca
+
+### Guardian Keys (Solana Multisig)
+
+```bash
+# Gerar novas chaves (armazenadas em ~/.lusdt-guardian-keys/)
+mkdir -p ~/.lusdt-guardian-keys
+for i in 1 2 3 4 5; do
+  solana-keygen new --no-passphrase --outfile ~/.lusdt-guardian-keys/guardian_${i}.json
+done
+
+# Exportar como env vars para .env.production ou CI
+scripts/setup-guardian-keys.sh
+
+# NUNCA commit as chaves. Use hardware wallets em producao.
+```
+
+### HashiCorp Vault (HSM recomendado)
+
+```bash
+# Bootstrap VPS (instala Vault, Redis, Docker)
+sudo scripts/setup-vps-bridge.sh
+
+# Inicializar Vault Transit + criar chave ed25519
+scripts/init-vault-transit.sh
+
+# Configurar no .env
+HSM_TYPE=hashicorp_vault
+VAULT_URL=https://vault.internal:8200
+VAULT_TOKEN=<token_gerado_acima>
+VAULT_KEY_NAME=solana-bridge
+```
+
+### Variaveis de Ambiente Obrigatorias (Producao)
+
+```bash
+NODE_ENV=production          # Habilita autenticacao HMAC e validacoes estritas
+BRIDGE_API_SECRET=<secret>   # Segredo HMAC para autenticacao server-to-server
+BRIDGE_API_KEY=<key>         # API key para frontends confiaveis
+HSM_TYPE=hashicorp_vault     # ou aws_kms (NUNCA local em producao)
+DATABASE_URL=postgresql://...
+REDIS_URL=redis://...
+LUNES_WALLET_SEED=<seed>     # Conta com MINTER_ROLE — use Vault em producao
+```
+
+Ver referencia completa: [`bridge-service/env-vps.example`](bridge-service/env-vps.example) e [`SECURITY.md`](SECURITY.md)
 
 ## Documentacao
 
+- **[ARCHITECTURE.md](ARCHITECTURE.md)** — Arquitetura detalhada, camadas, fluxos, seguranca
+- **[SECURITY.md](SECURITY.md)** — Guia de seguranca: KMS, guardian keys, controle de acesso, variaveis de ambiente
 - **[Bridge Service README](bridge-service/README.md)** — Documentacao completa do bridge
 - **[VPS Deployment](Docs/VPS_DEPLOYMENT_BRIDGE.md)** — Runbook de deploy em VPS
 - **[Cross-Contract Deploy](contracts/CROSS_CONTRACT_DEPLOY.md)** — Deploy e integracao entre contratos
-- **[Deployment Runbook](contracts/DEPLOYMENT_RUNBOOK.md)** — Checklist para testnet e mainnet
-- **[Integracao Solana USDT](docs/solana_usdt_integration.md)** — Implementacao tecnica
-- **[Analise de Seguranca](docs/security_analysis.md)** — Auditoria e seguranca
+- **[Deployment Runbook](contracts/DEPLOYMENT_RUNBOOK.md)** — Checklist para testnet e mainnet, verificacao de controle de acesso
 
 ## Roadmap
 

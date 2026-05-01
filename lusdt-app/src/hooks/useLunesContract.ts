@@ -236,12 +236,6 @@ export function useLunesContract() {
     }
 
     try {
-      // Verificar se é o bridge account
-      const isBridgeAccount = await isOwner(); // Temporário - implementar verificação real
-      if (!isBridgeAccount) {
-        throw new Error('Unauthorized: Only bridge account can mint');
-      }
-
       // Verificar se contrato não está pausado
       const paused = await isPaused();
       if (paused) {
@@ -278,7 +272,7 @@ export function useLunesContract() {
       console.error('Error minting LUSDT:', error);
       throw error;
     }
-  }, [lusdtContract, lunesWallet, isPaused, isOwner]);
+  }, [lusdtContract, lunesWallet, isPaused]);
 
   // Burn LUSDT
   const burnLusdt = useCallback(async (amount: string, solanaRecipient: string): Promise<string> => {
@@ -389,11 +383,6 @@ export function useLunesContract() {
     }
 
     try {
-      const isBridgeOwner = await isOwner();
-      if (!isBridgeOwner) {
-        throw new Error('Unauthorized: Only owner can pause contract');
-      }
-
       const injector = await web3FromSource(lunesWallet.source || 'polkadot-js');
       const { signer } = injector;
 
@@ -416,7 +405,7 @@ export function useLunesContract() {
       console.error('Error pausing contract:', error);
       throw error;
     }
-  }, [lusdtContract, lunesWallet, isOwner]);
+  }, [lusdtContract, lunesWallet]);
 
   // Admin: Despausar contrato
   const unpauseContract = useCallback(async (): Promise<string> => {
@@ -425,11 +414,6 @@ export function useLunesContract() {
     }
 
     try {
-      const isBridgeOwner = await isOwner();
-      if (!isBridgeOwner) {
-        throw new Error('Unauthorized: Only owner can unpause contract');
-      }
-
       const injector = await web3FromSource(lunesWallet.source || 'polkadot-js');
       const { signer } = injector;
 
@@ -452,7 +436,7 @@ export function useLunesContract() {
       console.error('Error unpausing contract:', error);
       throw error;
     }
-  }, [lusdtContract, lunesWallet, isOwner]);
+  }, [lusdtContract, lunesWallet]);
 
   // Obter preço do LUNES
   const getLunesPrice = useCallback(async (): Promise<string> => {
@@ -585,9 +569,10 @@ export function useLunesContract() {
         }
       }
 
-      // Consider "approved" if allowance > 1000 tokens (sufficient for normal operations)
-      const lusdtApproved = parseFloat(lusdtAllowance) > 1000;
-      const lunesApproved = parseFloat(lunesAllowance) > 100;
+      // UX guard only: show approval button if allowance is zero.
+      // The contract enforces actual limits — threshold check is not security.
+      const lusdtApproved = parseFloat(lusdtAllowance) > 0;
+      const lunesApproved = parseFloat(lunesAllowance) > 0;
 
       console.log('🔐 Tax Manager approvals:', { lusdtAllowance, lunesAllowance, lusdtApproved, lunesApproved });
       return { lusdtAllowance, lunesAllowance, lusdtApproved, lunesApproved };
@@ -669,55 +654,6 @@ export function useLunesContract() {
     }
   }, [api, lunesWallet]);
 
-  // Calcular taxa baseada no volume
-  // v3 model: dual-fee — USDT/LUSDT stablecoin fee + LUNES burn fee
-  const calculateFee = useCallback(async (amount: string): Promise<{
-    feeAmount: string;
-    feeCurrency: string;
-    netAmount: string;
-    feePercentBps: number;
-    volumeTier: 'low' | 'medium' | 'high';
-  }> => {
-    try {
-      const amountNum = parseFloat(amount);
-      const [feeRate, monthlyVolume] = await Promise.all([
-        getCurrentFeeBps(),
-        getMonthlyVolume()
-      ]);
-
-      // Determinar tier baseado no volume mensal
-      let volumeTier: 'low' | 'medium' | 'high';
-      if (parseFloat(monthlyVolume) <= 10000) {
-        volumeTier = 'low';
-      } else if (parseFloat(monthlyVolume) <= 100000) {
-        volumeTier = 'medium';
-      } else {
-        volumeTier = 'high';
-      }
-
-      // Calcular taxa em USD (mesma moeda da transação)
-      const feeAmount = amountNum * feeRate / 10000;
-      const netAmount = amountNum - feeAmount;
-
-      return {
-        feeAmount: feeAmount.toFixed(6),
-        feeCurrency: 'USD',
-        netAmount: netAmount.toFixed(6),
-        feePercentBps: feeRate,
-        volumeTier
-      };
-    } catch (error) {
-      console.error('Error calculating fee:', error);
-      return {
-        feeAmount: '0',
-        feeCurrency: 'USD',
-        netAmount: amount,
-        feePercentBps: 0,
-        volumeTier: 'low'
-      };
-    }
-  }, [getCurrentFeeBps, getMonthlyVolume]);
-
   return {
     // Estado da conexão
     api,
@@ -742,7 +678,6 @@ export function useLunesContract() {
     getLunesPrice,
     getCurrentFeeBps,
     getMonthlyVolume,
-    calculateFee,
 
     // Approval functions (v3: required for Tax Manager fee collection)
     checkTaxManagerApproval,
